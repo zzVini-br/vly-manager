@@ -22,4 +22,5 @@ include(GNUInstallDirs)
 include(cmake/CompilerWarnings.cmake)
 
 add_subdirectory(core)
+add_subdirectory(app)
 
