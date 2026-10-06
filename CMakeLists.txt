@@ -15,6 +15,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+option(VLY_BUILD_TESTS "Build unit tests" ON)
 option(VLY_WERROR "Treat compiler warnings as errors" OFF)
 option(VLY_SANITIZE "Enable AddressSanitizer and UBSan" OFF)
 
@@ -24,3 +25,7 @@ include(cmake/CompilerWarnings.cmake)
 add_subdirectory(core)
 add_subdirectory(app)
 
+if(VLY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
