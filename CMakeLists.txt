@@ -11,6 +11,9 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Strict C11 hides POSIX APIs (openat, dirfd, clock_gettime...); opt in to POSIX.1-2008.
+add_compile_definitions(_POSIX_C_SOURCE=200809L)
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
