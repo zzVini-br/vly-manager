@@ -1,4 +1,5 @@
 add_library(vly_core STATIC
+    src/stat_parser.c
     src/version.c)
 add_library(vly::core ALIAS vly_core)
 
