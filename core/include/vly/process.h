@@ -24,6 +24,10 @@ typedef struct vly_process {
     unsigned long long start_time; /* clock ticks after boot */
     unsigned long long rss_pages;  /* resident set size, in pages */
 
+    /* Share of the whole machine's CPU time (100 = every core busy) since
+     * the previous snapshot. Filled by vly_snapshot_compute_cpu(). */
+    double cpu_percent;
+
     /* Tree links: indices into the owning snapshot, or VLY_NO_INDEX.
      * Filled by vly_snapshot_build_tree(). */
     int32_t parent;

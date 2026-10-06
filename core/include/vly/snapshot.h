@@ -47,4 +47,16 @@ int32_t vly_snapshot_index_of(const vly_snapshot *snap, pid_t pid);
  */
 void vly_snapshot_build_tree(vly_snapshot *snap);
 
+/*
+ * Sets cpu_percent for every process in `cur` from the CPU time it used
+ * since `prev` (which may be NULL). Processes that are new, or whose pid was
+ * reused by a different process, get 0. Both snapshots must be pid-sorted,
+ * which vly_snapshot_collect() guarantees. O(n).
+ *
+ * `ticks_per_second` is sysconf(_SC_CLK_TCK); `cpu_count` is the number of
+ * online CPUs, so 100% means the whole machine is busy.
+ */
+void vly_snapshot_compute_cpu(vly_snapshot *cur, const vly_snapshot *prev, long ticks_per_second,
+                              long cpu_count);
+
 #endif /* VLY_SNAPSHOT_H */

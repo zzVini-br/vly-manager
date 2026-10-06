@@ -1,4 +1,5 @@
 add_library(vly_core STATIC
+    src/cpu.c
     src/snapshot.c
     src/stat_parser.c
     src/tree.c

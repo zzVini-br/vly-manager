@@ -7,6 +7,7 @@ function(vly_add_test name)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
+vly_add_test(test_cpu)
 vly_add_test(test_snapshot)
 vly_add_test(test_stat_parser)
 vly_add_test(test_tree)
