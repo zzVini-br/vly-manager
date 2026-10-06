@@ -9,4 +9,5 @@ endfunction()
 
 vly_add_test(test_snapshot)
 vly_add_test(test_stat_parser)
+vly_add_test(test_tree)
 vly_add_test(test_version)

@@ -2,6 +2,7 @@
 #define VLY_PROCESS_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 /* Room for the longest name the kernel reports in /proc/PID/stat (kworker names
@@ -22,6 +23,12 @@ typedef struct vly_process {
     unsigned long long stime;      /* clock ticks spent in kernel mode */
     unsigned long long start_time; /* clock ticks after boot */
     unsigned long long rss_pages;  /* resident set size, in pages */
+
+    /* Tree links: indices into the owning snapshot, or VLY_NO_INDEX.
+     * Filled by vly_snapshot_build_tree(). */
+    int32_t parent;
+    int32_t first_child;
+    int32_t next_sibling;
 } vly_process;
 
 /*

@@ -20,6 +20,7 @@ typedef struct vly_snapshot {
     size_t count;
     size_t capacity;
     uint64_t timestamp_ns; /* CLOCK_MONOTONIC at collection time */
+    int32_t first_root;    /* first top-level process, see build_tree */
 } vly_snapshot;
 
 void vly_snapshot_init(vly_snapshot *snap);
@@ -34,5 +35,16 @@ int vly_snapshot_collect(vly_snapshot *snap, const char *proc_root);
 
 /* Returns the index of `pid` in `snap`, or VLY_NO_INDEX. O(log n). */
 int32_t vly_snapshot_index_of(const vly_snapshot *snap, pid_t pid);
+
+/*
+ * Links every process to its parent, children and siblings. Processes whose
+ * parent is not in the snapshot (pid 1, kthreadd) become roots, chained from
+ * `first_root` through `next_sibling`. Siblings are ordered by pid. O(n log n).
+ *
+ * /proc is not read atomically, so pid reuse during a collection can, in
+ * theory, produce a parent cycle; such processes are unreachable from the
+ * roots for that snapshot, which keeps every traversal finite.
+ */
+void vly_snapshot_build_tree(vly_snapshot *snap);
 
 #endif /* VLY_SNAPSHOT_H */

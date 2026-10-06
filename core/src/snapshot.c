@@ -23,6 +23,7 @@ void vly_snapshot_init(vly_snapshot *snap)
     snap->count = 0;
     snap->capacity = 0;
     snap->timestamp_ns = 0;
+    snap->first_root = VLY_NO_INDEX;
 }
 
 void vly_snapshot_free(vly_snapshot *snap)
@@ -148,6 +149,7 @@ int vly_snapshot_collect(vly_snapshot *snap, const char *proc_root)
     int proc_fd = dirfd(dir);
     int err = 0;
     snap->count = 0;
+    snap->first_root = VLY_NO_INDEX;
 
     for (;;) {
         errno = 0;
@@ -170,7 +172,11 @@ int vly_snapshot_collect(vly_snapshot *snap, const char *proc_root)
         }
 
         /* A process that exits mid-read is simply left out. */
-        if (read_process(proc_fd, pid, &snap->procs[snap->count]) == 0) {
+        vly_process *proc = &snap->procs[snap->count];
+        if (read_process(proc_fd, pid, proc) == 0) {
+            proc->parent = VLY_NO_INDEX;
+            proc->first_child = VLY_NO_INDEX;
+            proc->next_sibling = VLY_NO_INDEX;
             snap->count++;
         }
     }
