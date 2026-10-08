@@ -1,5 +1,7 @@
 add_executable(vly
-    main.c)
+    format.c
+    main.c
+    match.c)
 
 target_link_libraries(vly PRIVATE vly::core)
 
