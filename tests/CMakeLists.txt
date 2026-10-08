@@ -13,3 +13,6 @@ vly_add_test(test_snapshot)
 vly_add_test(test_stat_parser)
 vly_add_test(test_tree)
 vly_add_test(test_version)
+
+add_test(NAME test_cli
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/cli/test_cli.sh $<TARGET_FILE:vly>)
