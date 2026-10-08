@@ -1,5 +1,6 @@
 add_library(vly_core STATIC
     src/cpu.c
+    src/kill.c
     src/proc_reader.c
     src/snapshot.c
     src/stat_parser.c
