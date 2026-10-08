@@ -1,4 +1,5 @@
 add_executable(vly
+    cmd_list.c
     format.c
     main.c
     match.c)
