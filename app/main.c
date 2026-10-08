@@ -12,6 +12,8 @@ typedef struct command {
 
 static const command commands[] = {
     {"list", cmd_list, "Show the process tree with CPU and memory usage"},
+    {"kill", cmd_kill, "Stop processes by pid or name (SIGTERM, then SIGKILL)"},
+    {"kill-tree", cmd_kill_tree, "Stop processes and all their descendants"},
 };
 
 #define COMMAND_COUNT (sizeof(commands) / sizeof(commands[0]))
