@@ -262,6 +262,7 @@ static int run(int argc, char **argv, bool descendants)
     int err = vly_snapshot_collect(&snap, "/proc");
     if (err != 0) {
         fprintf(stderr, "vly: cannot read /proc: %s\n", strerror(-err));
+        vly_snapshot_free(&snap);
         return EXIT_USAGE_OR_NOT_FOUND;
     }
     vly_snapshot_build_tree(&snap);
