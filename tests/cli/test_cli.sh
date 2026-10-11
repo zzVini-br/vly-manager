@@ -93,6 +93,15 @@ expect_status 0 "kill-tree with a low fd limit" \
     sh -c 'ulimit -Sn 30 && exec "$@"' sh "$VLY" kill-tree -t 1 "$PARENT_NAME"
 wait_until_count "$SLEEP_NAME" 0 || fail "kill-tree with a low fd limit stops every child"
 
+# Options after the target: "-t 2" must set the timeout, not add pid 2.
+"$WORK/$SLEEP_NAME" 300 &
+wait_until_count "$SLEEP_NAME" 1 || fail "test process did not start"
+expect_status 0 "option after the target" "$VLY" kill "$SLEEP_NAME" -t 2
+grep -q "kernel thread" "$WORK/out" && fail "an option value is not taken as a pid"
+wait
+wait_until_count "$SLEEP_NAME" 0 || fail "option after the target still stops it"
+expect_status 1 "unknown option after the target" "$VLY" kill "$SLEEP_NAME" --bogus
+
 # Refusals and misses.
 expect_status 1 "kill pid 1" "$VLY" kill 1
 expect_status 1 "kill missing name" "$VLY" kill vly-no-such-process

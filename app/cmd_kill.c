@@ -29,7 +29,8 @@ static void print_usage(FILE *out, const char *command)
             "  TARGET              a pid, or a process name (exact, case-insensitive);\n"
             "                      every process with that name is stopped\n"
             "  -t, --timeout SECS  grace period before SIGKILL (default 5)\n"
-            "  -h, --help          show this help\n",
+            "  -h, --help          show this help\n"
+            "  --                  treat every following argument as a target\n",
             command, strcmp(command, "kill-tree") == 0 ? " and all their descendants" : "");
 }
 
@@ -202,33 +203,38 @@ static int run(int argc, char **argv, bool descendants)
 {
     vly_kill_options opts = VLY_KILL_OPTIONS_DEFAULT;
     unsigned int grace_seconds = opts.grace_ms / 1000;
-    int first_target = argc;
+
+    /* Options may appear anywhere; everything after "--" is a target. Targets
+     * are gathered at the front of argv, which never overtakes the scan. */
+    char **targets = argv + 1;
+    int target_count = 0;
+    bool options_done = false;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+        const char *arg = argv[i];
+
+        if (options_done || arg[0] != '-') {
+            targets[target_count++] = argv[i];
+        } else if (strcmp(arg, "--") == 0) {
+            options_done = true;
+        } else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
             print_usage(stdout, argv[0]);
             return EXIT_OK;
-        }
-        if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--timeout") == 0) {
+        } else if (strcmp(arg, "-t") == 0 || strcmp(arg, "--timeout") == 0) {
             if (i + 1 >= argc || !parse_seconds(argv[i + 1], &grace_seconds)) {
                 fprintf(stderr, "vly: --timeout needs a number of seconds (0-%d)\n",
                         MAX_GRACE_SECONDS);
                 return EXIT_USAGE_OR_NOT_FOUND;
             }
             i++;
-        } else if (strcmp(argv[i], "--") == 0) {
-            first_target = i + 1;
-            break;
-        } else if (argv[i][0] == '-') {
+        } else {
+            fprintf(stderr, "vly: unknown option '%s'\n\n", arg);
             print_usage(stderr, argv[0]);
             return EXIT_USAGE_OR_NOT_FOUND;
-        } else {
-            first_target = i;
-            break;
         }
     }
 
-    if (first_target >= argc) {
+    if (target_count == 0) {
         print_usage(stderr, argv[0]);
         return EXIT_USAGE_OR_NOT_FOUND;
     }
@@ -253,8 +259,8 @@ static int run(int argc, char **argv, bool descendants)
     }
 
     bool missing = false;
-    for (int i = first_target; i < argc; i++) {
-        missing |= select_target(&snap, argv[i], selected) == 0;
+    for (int i = 0; i < target_count; i++) {
+        missing |= select_target(&snap, targets[i], selected) == 0;
     }
 
     /* In tree mode, a process inside an already selected tree is covered. */
