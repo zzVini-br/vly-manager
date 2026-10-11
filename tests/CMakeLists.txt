@@ -5,6 +5,7 @@ function(vly_add_test name)
         VLY_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
     vly_set_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES TIMEOUT 60)
 endfunction()
 
 vly_add_test(test_cpu)
@@ -16,3 +17,4 @@ vly_add_test(test_version)
 
 add_test(NAME test_cli
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/cli/test_cli.sh $<TARGET_FILE:vly>)
+set_tests_properties(test_cli PROPERTIES TIMEOUT 60)
