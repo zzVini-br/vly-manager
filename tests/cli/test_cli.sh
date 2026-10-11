@@ -39,7 +39,8 @@ expect_status() {
 
 # Number of this run's processes with the given name.
 count_running() {
-    pgrep -c -x "$1" 2>/dev/null || true
+    count=$(pgrep -c -x "$1" 2>/dev/null)
+    echo "${count:-0}"
 }
 
 # wait_until_count NAME COUNT: polls for up to 5 s instead of sleeping blindly.
@@ -101,6 +102,26 @@ grep -q "kernel thread" "$WORK/out" && fail "an option value is not taken as a p
 wait
 wait_until_count "$SLEEP_NAME" 0 || fail "option after the target still stops it"
 expect_status 1 "unknown option after the target" "$VLY" kill "$SLEEP_NAME" --bogus
+
+# Control characters in process names must not reach the terminal: a name
+# with ESC sequences could clear the screen or retitle the window. Kept
+# under the kernel's 15-character name limit.
+EVIL_NAME="$(printf 'e\033[2J\007%s' $$)"
+cp "$(command -v sleep)" "$WORK/$EVIL_NAME"
+"$WORK/$EVIL_NAME" 300 &
+evil_pid=$!
+# Its name is not a usable pgrep pattern, so wait for the exec via /proc.
+tries=0
+while [ "$(cut -c1 /proc/$evil_pid/comm 2>/dev/null)" != "e" ] && [ $tries -lt 100 ]; do
+    sleep 0.05
+    tries=$((tries + 1))
+done
+expect_status 0 "list a process with control characters" "$VLY" list "$$"
+[ "$(tr -dc '\033\007' <"$WORK/out" | wc -c)" -eq 0 ] || fail "list prints raw control characters"
+grep -qF "e?[2J?$$" "$WORK/out" || fail "list shows control characters as '?'"
+expect_status 0 "kill a process with control characters" "$VLY" kill "$evil_pid"
+[ "$(tr -dc '\033\007' <"$WORK/out" | wc -c)" -eq 0 ] || fail "kill prints raw control characters"
+wait "$evil_pid"
 
 # Refusals and misses.
 expect_status 1 "kill pid 1" "$VLY" kill 1

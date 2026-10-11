@@ -82,12 +82,15 @@ static size_t count_descendants(const vly_snapshot *snap, int32_t index)
 
 static void warn_zombie(const vly_snapshot *snap, const vly_process *proc)
 {
+    char name[VLY_NAME_SIZE];
+    fmt_safe_name(proc->name, name, sizeof(name));
     fprintf(stderr, "vly: %s (%d) is a zombie: it already exited and only its parent can clear it",
-            proc->name, (int)proc->pid);
+            name, (int)proc->pid);
     if (proc->parent != VLY_NO_INDEX) {
         const vly_process *parent = &snap->procs[proc->parent];
+        fmt_safe_name(parent->name, name, sizeof(name));
         fprintf(stderr, ".\n     Stop the parent instead: vly kill %d  (%s)\n", (int)parent->pid,
-                parent->name);
+                name);
     } else {
         fputs(".\n", stderr);
     }
@@ -129,7 +132,9 @@ static size_t select_target(const vly_snapshot *snap, const char *target, bool *
     }
 
     if (found == 0) {
-        fprintf(stderr, "vly: no process named '%s'\n", target);
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(target, name, sizeof(name));
+        fprintf(stderr, "vly: no process named '%s'\n", name);
     }
     return found;
 }
@@ -143,8 +148,9 @@ static void print_plan(const vly_snapshot *snap, const int32_t *roots, size_t co
 
     for (size_t i = 0; i < count; i++) {
         const vly_process *proc = &snap->procs[roots[i]];
-        printf("  %s%s%s (%d)", fmt_style(FMT_BOLD), proc->name, fmt_style(FMT_RESET),
-               (int)proc->pid);
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(proc->name, name, sizeof(name));
+        printf("  %s%s%s (%d)", fmt_style(FMT_BOLD), name, fmt_style(FMT_RESET), (int)proc->pid);
         if (descendants) {
             size_t below = count_descendants(snap, roots[i]);
             if (below > 0) {

@@ -44,6 +44,29 @@ void fmt_memory(unsigned long long bytes, char *buf, size_t size)
     }
 }
 
+void fmt_safe_name(const char *name, char *out, size_t size)
+{
+    size_t len = 0;
+
+    if (size == 0) {
+        return;
+    }
+
+    for (const unsigned char *p = (const unsigned char *)name; *p != '\0' && len + 1 < size;
+         p++) {
+        if (*p < 0x20 || *p == 0x7f) {
+            out[len++] = '?';
+        } else if (*p == 0xc2 && p[1] >= 0x80 && p[1] <= 0x9f) {
+            /* U+0080..U+009F: C1 controls such as CSI. */
+            out[len++] = '?';
+            p++;
+        } else {
+            out[len++] = (char)*p;
+        }
+    }
+    out[len] = '\0';
+}
+
 typedef struct user_entry {
     uid_t uid;
     char name[USER_NAME_SIZE];
