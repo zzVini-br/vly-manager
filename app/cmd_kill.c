@@ -60,9 +60,16 @@ static const char *refusal_reason(const vly_process *proc)
     return NULL;
 }
 
+/*
+ * Parent chains and subtrees are walked at most snap->count levels deep: a
+ * parent cycle left by pid reuse during collection (see
+ * vly_snapshot_build_tree) must not hang vly.
+ */
 static bool has_selected_ancestor(const vly_snapshot *snap, const bool *selected, int32_t index)
 {
-    for (int32_t p = snap->procs[index].parent; p != VLY_NO_INDEX; p = snap->procs[p].parent) {
+    size_t steps = 0;
+    for (int32_t p = snap->procs[index].parent; p != VLY_NO_INDEX && steps < snap->count;
+         p = snap->procs[p].parent, steps++) {
         if (selected[p]) {
             return true;
         }
@@ -70,12 +77,16 @@ static bool has_selected_ancestor(const vly_snapshot *snap, const bool *selected
     return false;
 }
 
-static size_t count_descendants(const vly_snapshot *snap, int32_t index)
+static size_t count_descendants(const vly_snapshot *snap, int32_t index, size_t depth_left)
 {
+    if (depth_left == 0) {
+        return 0;
+    }
+
     size_t total = 0;
     for (int32_t c = snap->procs[index].first_child; c != VLY_NO_INDEX;
          c = snap->procs[c].next_sibling) {
-        total += 1 + count_descendants(snap, c);
+        total += 1 + count_descendants(snap, c, depth_left - 1);
     }
     return total;
 }
@@ -152,7 +163,7 @@ static void print_plan(const vly_snapshot *snap, const int32_t *roots, size_t co
         fmt_safe_name(proc->name, name, sizeof(name));
         printf("  %s%s%s (%d)", fmt_style(FMT_BOLD), name, fmt_style(FMT_RESET), (int)proc->pid);
         if (descendants) {
-            size_t below = count_descendants(snap, roots[i]);
+            size_t below = count_descendants(snap, roots[i], snap->count);
             if (below > 0) {
                 printf(" + %zu %s", below, below == 1 ? "descendant" : "descendants");
             }
