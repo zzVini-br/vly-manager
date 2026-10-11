@@ -183,6 +183,14 @@ static int print_report(const vly_kill_report *report)
                 report->survivors == 1 ? "process" : "processes", fmt_style(FMT_RESET));
         status = EXIT_PARTIAL;
     }
+    if (report->failed > 0) {
+        fprintf(stderr,
+                "%svly: %zu %s could not be stopped because of a system error\n"
+                "     (for example, too many open files). They are still running.%s\n",
+                fmt_style(FMT_RED), report->failed,
+                report->failed == 1 ? "process" : "processes", fmt_style(FMT_RESET));
+        status = EXIT_PARTIAL;
+    }
     if (report->zombies > 0) {
         printf("%zu %s skipped: already dead, waiting for a parent to clear them.\n",
                report->zombies, report->zombies == 1 ? "zombie" : "zombies");

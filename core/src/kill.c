@@ -238,8 +238,11 @@ int vly_kill_many(const vly_snapshot *snap, const int32_t *indices, size_t index
         }
 
         target t;
-        if (open_verified(proc_fd, proc, &t.pidfd, &t.state) != 0) {
+        int open_err = open_verified(proc_fd, proc, &t.pidfd, &t.state);
+        if (open_err == -ESRCH) {
             report->vanished++;
+        } else if (open_err != 0) {
+            report->failed++;
         } else if (t.state == 'Z') {
             report->zombies++;
             close(t.pidfd);
