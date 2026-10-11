@@ -6,8 +6,8 @@ Built to solve a real annoyance: games launched through Steam/Proton leaving Ste
 convinced a game is still running, so it ignores `SIGTERM` and logout or shutdown hangs
 until systemd's stop timeout expires.
 
-> **Status:** early development (v0.1 in progress). The command line works; the
-> interactive terminal UI is next.
+> **Status:** early development. v0.1.0 ships the command line; the interactive
+> terminal UI is next. See the [changelog](CHANGELOG.md) for what changed in each release.
 
 ## Usage
 
@@ -44,15 +44,29 @@ Exit status, for scripts:
 - Zombies are reported, not signalled: they are already dead, and only their parent can
   clear them.
 
-## Roadmap (v0.1)
+## Roadmap
+
+**v0.1.0: command line** (released)
 
 - [x] Process tree with pid, state, user, CPU and memory
 - [x] Filter by name
 - [x] Stop a process or a whole tree (`SIGTERM`, wait, then `SIGKILL`)
 - [x] Highlight zombie (`Z`) and uninterruptible (`D`) processes
 - [x] Scriptable CLI: `vly kill-tree steam`
-- [ ] Interactive terminal UI with threads view, dark theme by default
-- [ ] `.deb` package
+
+**v0.2.0: terminal UI**
+
+- [ ] Interactive, auto-refreshing process tree, dark theme by default
+- [ ] Threads view per process
+- [ ] Select and stop processes or trees from the keyboard
+
+**v0.3.0: packaging**
+
+- [ ] `.deb` package with a desktop entry
+
+**Later**
+
+- [ ] Qt GUI, with polkit for stopping other users' processes
 
 ## Building
 
