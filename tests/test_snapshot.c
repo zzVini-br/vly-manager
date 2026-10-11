@@ -1,5 +1,9 @@
 #include <errno.h>
+#include <signal.h>
+#include <stdbool.h>
 #include <string.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "test.h"
@@ -77,10 +81,52 @@ static void test_collect_live_proc(void)
     vly_snapshot_free(&snap);
 }
 
+/* Non-dumpable processes have /proc files owned by root; the reported uid
+ * must still be the real owner's. */
+static void test_non_dumpable_process_owner(void)
+{
+    int ready[2];
+    if (pipe(ready) != 0) {
+        CHECK(false);
+        return;
+    }
+
+    pid_t child = fork();
+    if (child == 0) {
+        close(ready[0]);
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+        (void)!write(ready[1], "x", 1);
+        close(ready[1]);
+        for (;;) {
+            pause();
+        }
+    }
+
+    close(ready[1]);
+    char c;
+    (void)!read(ready[0], &c, 1);
+    close(ready[0]);
+
+    vly_snapshot snap;
+    vly_snapshot_init(&snap);
+    CHECK(vly_snapshot_collect(&snap, "/proc") == 0);
+
+    int32_t index = vly_snapshot_index_of(&snap, child);
+    CHECK(index != VLY_NO_INDEX);
+    if (index != VLY_NO_INDEX) {
+        CHECK(snap.procs[index].uid == geteuid());
+    }
+
+    kill(child, SIGKILL);
+    waitpid(child, NULL, 0);
+    vly_snapshot_free(&snap);
+}
+
 int main(void)
 {
     test_collect_fixtures();
     test_collect_missing_root();
     test_collect_live_proc();
+    test_non_dumpable_process_owner();
     return TEST_RESULT();
 }
