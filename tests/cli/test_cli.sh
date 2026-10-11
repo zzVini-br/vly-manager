@@ -85,6 +85,14 @@ grep -q "+ 2 descendants" "$WORK/out" || fail "kill-tree reports 2 descendants"
 wait_until_count "$PARENT_NAME" 0 || fail "kill-tree stops the parent"
 wait_until_count "$SLEEP_NAME" 0 || fail "kill-tree stops the children"
 
+# kill-tree on a tree larger than a low open-file soft limit: vly raises
+# its own limit, so every process is still stopped.
+"$WORK/$PARENT_NAME" -c "for i in \$(seq 60); do \"$WORK/$SLEEP_NAME\" 300 & done; wait" &
+wait_until_count "$SLEEP_NAME" 60 || fail "wide test tree did not start"
+expect_status 0 "kill-tree with a low fd limit" \
+    sh -c 'ulimit -Sn 30 && exec "$@"' sh "$VLY" kill-tree -t 1 "$PARENT_NAME"
+wait_until_count "$SLEEP_NAME" 0 || fail "kill-tree with a low fd limit stops every child"
+
 # Refusals and misses.
 expect_status 1 "kill pid 1" "$VLY" kill 1
 expect_status 1 "kill missing name" "$VLY" kill vly-no-such-process
