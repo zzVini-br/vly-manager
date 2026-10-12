@@ -20,6 +20,8 @@
 #define INPUT_POLL_MS 100
 
 #define KEY_ESCAPE 27
+#define KEY_ASCII_BACKSPACE 8
+#define KEY_ASCII_DELETE 127
 
 /* How long curses waits after Esc for the rest of an escape sequence (arrow
  * keys arrive as one). Its default of a full second makes Esc feel stuck;
@@ -36,7 +38,8 @@ typedef struct tui {
     vly_snapshot *prev;
     tree_view view;
     quickfind find;
-    bool find_failed; /* the text being typed matches no visible process */
+    bool find_failed;    /* the text being typed matches no visible process */
+    bool editing_filter; /* keys go to the filter box in the footer */
     size_t process_count; /* user-space processes in `cur` */
     uint64_t next_refresh_ms;
     long ticks_per_second;
@@ -128,7 +131,12 @@ static void draw_header(const tui *t)
 {
     char left[128];
     char right[64];
-    snprintf(left, sizeof(left), "  \xc2\xb7  %zu processes", t->process_count);
+    if (t->view.filter[0] != '\0') {
+        snprintf(left, sizeof(left), "  \xc2\xb7  %zu shown of %zu processes", t->view.row_count,
+                 t->process_count);
+    } else {
+        snprintf(left, sizeof(left), "  \xc2\xb7  %zu processes", t->process_count);
+    }
     snprintf(right, sizeof(right), "refresh %ds ", REFRESH_MS / 1000);
 
     theme_use(ROLE_BAR, A_NORMAL);
@@ -215,6 +223,16 @@ static void draw_body(tui *t)
     size_t height = body_height();
     tree_view_scroll_to_cursor(&t->view, height);
 
+    if (t->view.row_count == 0 && t->view.filter[0] != '\0' && height > 1) {
+        char text[128];
+        snprintf(text, sizeof(text), "no process name contains \"%s\"", t->view.filter);
+        theme_use(ROLE_DIM, A_NORMAL);
+        int col = 2;
+        move(HEADER_ROWS + 1, col);
+        put_clipped(&col, text);
+        return;
+    }
+
     for (size_t i = 0; i < height && t->view.scroll + i < t->view.row_count; i++) {
         size_t row = t->view.scroll + i;
         draw_row(t, HEADER_ROWS + (int)i, &t->view.rows[row], row == t->view.cursor);
@@ -227,13 +245,18 @@ static void draw_footer(const tui *t)
 
     if (t->error != 0) {
         snprintf(text, sizeof(text), " vly: %s", strerror(-t->error));
+    } else if (t->editing_filter) {
+        snprintf(text, sizeof(text), " filter: %s_   Enter keep   Esc clear", t->view.filter);
+    } else if (t->view.filter[0] != '\0') {
+        snprintf(text, sizeof(text), " filter: %s   / edit   Esc clear   F10 quit",
+                 t->view.filter);
     } else if (quickfind_active(&t->find, monotonic_ms())) {
         snprintf(text, sizeof(text), " find: %s%s", t->find.text,
                  t->find_failed ? "   (no match)" : "");
     } else {
         snprintf(text, sizeof(text),
                  " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "type a name to jump   Esc quit");
+                 "type to jump   / filter   Esc quit");
     }
 
     theme_use(ROLE_BAR, A_NORMAL);
@@ -271,9 +294,60 @@ static void find(tui *t, char c)
     t->find_failed = !tree_view_select_prefix(&t->view, step.text, step.from_next);
 }
 
+static void set_filter(tui *t, const char *text)
+{
+    t->error = tree_view_set_filter(&t->view, text);
+}
+
+/*
+ * Keys while the filter box is open. Returns false for keys it does not
+ * handle (arrows and the like): they close the box and act as usual.
+ */
+static bool handle_filter_key(tui *t, int key)
+{
+    char text[TREE_VIEW_FILTER_SIZE];
+    snprintf(text, sizeof(text), "%s", t->view.filter);
+    size_t len = strlen(text);
+
+    if (key >= ' ' && key <= '~') {
+        if (len + 1 < sizeof(text)) {
+            text[len] = (char)key;
+            text[len + 1] = '\0';
+            set_filter(t, text);
+        }
+    } else if (key == KEY_BACKSPACE || key == KEY_ASCII_BACKSPACE || key == KEY_ASCII_DELETE) {
+        if (len > 0) {
+            text[len - 1] = '\0';
+            set_filter(t, text);
+        }
+    } else if (key == '\n' || key == '\r' || key == KEY_ENTER) {
+        t->editing_filter = false;
+    } else if (key == KEY_ESCAPE) {
+        set_filter(t, "");
+        t->editing_filter = false;
+    } else if (key != KEY_RESIZE) {
+        t->editing_filter = false;
+        return false;
+    }
+
+    draw(t);
+    return true;
+}
+
 /* Returns false when the key should end the program. */
 static bool handle_key(tui *t, int key)
 {
+    if (t->editing_filter && handle_filter_key(t, key)) {
+        return true;
+    }
+
+    if (key == '/') {
+        quickfind_reset(&t->find);
+        t->editing_filter = true;
+        draw(t);
+        return true;
+    }
+
     if (is_find_key(key)) {
         find(t, (char)key);
         draw(t);
@@ -292,6 +366,12 @@ static bool handle_key(tui *t, int key)
 
     switch (key) {
     case KEY_ESCAPE:
+        /* Esc first clears an active filter, and quits only after that. */
+        if (t->view.filter[0] == '\0') {
+            return false;
+        }
+        set_filter(t, "");
+        break;
     case KEY_F(10):
         return false;
     case KEY_UP:
