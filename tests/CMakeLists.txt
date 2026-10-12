@@ -12,6 +12,8 @@ endfunction()
 
 vly_add_test(test_cpu)
 vly_add_test(test_kill)
+vly_add_test(test_kill_jobs)
+target_link_libraries(test_kill_jobs PRIVATE vly_view)
 vly_add_test(test_snapshot)
 vly_add_test(test_stat_parser)
 vly_add_test(test_threads)
