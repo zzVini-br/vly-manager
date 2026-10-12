@@ -15,6 +15,9 @@
 
 #include "vly/snapshot.h"
 
+/* Room for the filter text, terminator included. */
+#define TREE_VIEW_FILTER_SIZE 64
+
 /* Identifies a process across snapshots; the start time tells a reused pid
  * apart from the process that had it before. */
 typedef struct proc_key {
@@ -29,6 +32,7 @@ typedef struct tree_row {
 
 typedef struct tree_view {
     bool show_kernel;
+    char filter[TREE_VIEW_FILTER_SIZE]; /* empty: no filter */
 
     const vly_snapshot *snap; /* the snapshot the rows refer to */
     tree_row *rows;
@@ -53,6 +57,14 @@ void tree_view_free(tree_view *view);
  * position. `snap` must outlive the rows. Returns 0 or -ENOMEM.
  */
 int tree_view_rebuild(tree_view *view, const vly_snapshot *snap);
+
+/*
+ * Shows only processes whose name contains `text` (ignoring case), each at
+ * the top level with its whole subtree, like `vly list FILTER`. An empty
+ * text shows everything again. The selection stays if still visible and
+ * moves to the first row otherwise. Returns 0 or -ENOMEM.
+ */
+int tree_view_set_filter(tree_view *view, const char *text);
 
 /* The selected process, or NULL when there are no rows. */
 const vly_process *tree_view_selected(const tree_view *view);
