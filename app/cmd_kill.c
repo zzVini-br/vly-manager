@@ -29,7 +29,8 @@ static void print_usage(FILE *out, const char *command)
             "  TARGET              a pid, or a process name (exact, case-insensitive);\n"
             "                      every process with that name is stopped\n"
             "  -t, --timeout SECS  grace period before SIGKILL (default 5)\n"
-            "  -h, --help          show this help\n",
+            "  -h, --help          show this help\n"
+            "  --                  treat every following argument as a target\n",
             command, strcmp(command, "kill-tree") == 0 ? " and all their descendants" : "");
 }
 
@@ -59,9 +60,16 @@ static const char *refusal_reason(const vly_process *proc)
     return NULL;
 }
 
+/*
+ * Parent chains and subtrees are walked at most snap->count levels deep: a
+ * parent cycle left by pid reuse during collection (see
+ * vly_snapshot_build_tree) must not hang vly.
+ */
 static bool has_selected_ancestor(const vly_snapshot *snap, const bool *selected, int32_t index)
 {
-    for (int32_t p = snap->procs[index].parent; p != VLY_NO_INDEX; p = snap->procs[p].parent) {
+    size_t steps = 0;
+    for (int32_t p = snap->procs[index].parent; p != VLY_NO_INDEX && steps < snap->count;
+         p = snap->procs[p].parent, steps++) {
         if (selected[p]) {
             return true;
         }
@@ -69,24 +77,31 @@ static bool has_selected_ancestor(const vly_snapshot *snap, const bool *selected
     return false;
 }
 
-static size_t count_descendants(const vly_snapshot *snap, int32_t index)
+static size_t count_descendants(const vly_snapshot *snap, int32_t index, size_t depth_left)
 {
+    if (depth_left == 0) {
+        return 0;
+    }
+
     size_t total = 0;
     for (int32_t c = snap->procs[index].first_child; c != VLY_NO_INDEX;
          c = snap->procs[c].next_sibling) {
-        total += 1 + count_descendants(snap, c);
+        total += 1 + count_descendants(snap, c, depth_left - 1);
     }
     return total;
 }
 
 static void warn_zombie(const vly_snapshot *snap, const vly_process *proc)
 {
+    char name[VLY_NAME_SIZE];
+    fmt_safe_name(proc->name, name, sizeof(name));
     fprintf(stderr, "vly: %s (%d) is a zombie: it already exited and only its parent can clear it",
-            proc->name, (int)proc->pid);
+            name, (int)proc->pid);
     if (proc->parent != VLY_NO_INDEX) {
         const vly_process *parent = &snap->procs[proc->parent];
+        fmt_safe_name(parent->name, name, sizeof(name));
         fprintf(stderr, ".\n     Stop the parent instead: vly kill %d  (%s)\n", (int)parent->pid,
-                parent->name);
+                name);
     } else {
         fputs(".\n", stderr);
     }
@@ -128,7 +143,9 @@ static size_t select_target(const vly_snapshot *snap, const char *target, bool *
     }
 
     if (found == 0) {
-        fprintf(stderr, "vly: no process named '%s'\n", target);
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(target, name, sizeof(name));
+        fprintf(stderr, "vly: no process named '%s'\n", name);
     }
     return found;
 }
@@ -142,10 +159,11 @@ static void print_plan(const vly_snapshot *snap, const int32_t *roots, size_t co
 
     for (size_t i = 0; i < count; i++) {
         const vly_process *proc = &snap->procs[roots[i]];
-        printf("  %s%s%s (%d)", fmt_style(FMT_BOLD), proc->name, fmt_style(FMT_RESET),
-               (int)proc->pid);
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(proc->name, name, sizeof(name));
+        printf("  %s%s%s (%d)", fmt_style(FMT_BOLD), name, fmt_style(FMT_RESET), (int)proc->pid);
         if (descendants) {
-            size_t below = count_descendants(snap, roots[i]);
+            size_t below = count_descendants(snap, roots[i], snap->count);
             if (below > 0) {
                 printf(" + %zu %s", below, below == 1 ? "descendant" : "descendants");
             }
@@ -183,6 +201,14 @@ static int print_report(const vly_kill_report *report)
                 report->survivors == 1 ? "process" : "processes", fmt_style(FMT_RESET));
         status = EXIT_PARTIAL;
     }
+    if (report->failed > 0) {
+        fprintf(stderr,
+                "%svly: %zu %s could not be stopped because of a system error\n"
+                "     (for example, too many open files). They are still running.%s\n",
+                fmt_style(FMT_RED), report->failed,
+                report->failed == 1 ? "process" : "processes", fmt_style(FMT_RESET));
+        status = EXIT_PARTIAL;
+    }
     if (report->zombies > 0) {
         printf("%zu %s skipped: already dead, waiting for a parent to clear them.\n",
                report->zombies, report->zombies == 1 ? "zombie" : "zombies");
@@ -194,33 +220,38 @@ static int run(int argc, char **argv, bool descendants)
 {
     vly_kill_options opts = VLY_KILL_OPTIONS_DEFAULT;
     unsigned int grace_seconds = opts.grace_ms / 1000;
-    int first_target = argc;
+
+    /* Options may appear anywhere; everything after "--" is a target. Targets
+     * are gathered at the front of argv, which never overtakes the scan. */
+    char **targets = argv + 1;
+    int target_count = 0;
+    bool options_done = false;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+        const char *arg = argv[i];
+
+        if (options_done || arg[0] != '-') {
+            targets[target_count++] = argv[i];
+        } else if (strcmp(arg, "--") == 0) {
+            options_done = true;
+        } else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0) {
             print_usage(stdout, argv[0]);
             return EXIT_OK;
-        }
-        if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--timeout") == 0) {
+        } else if (strcmp(arg, "-t") == 0 || strcmp(arg, "--timeout") == 0) {
             if (i + 1 >= argc || !parse_seconds(argv[i + 1], &grace_seconds)) {
                 fprintf(stderr, "vly: --timeout needs a number of seconds (0-%d)\n",
                         MAX_GRACE_SECONDS);
                 return EXIT_USAGE_OR_NOT_FOUND;
             }
             i++;
-        } else if (strcmp(argv[i], "--") == 0) {
-            first_target = i + 1;
-            break;
-        } else if (argv[i][0] == '-') {
+        } else {
+            fprintf(stderr, "vly: unknown option '%s'\n\n", arg);
             print_usage(stderr, argv[0]);
             return EXIT_USAGE_OR_NOT_FOUND;
-        } else {
-            first_target = i;
-            break;
         }
     }
 
-    if (first_target >= argc) {
+    if (target_count == 0) {
         print_usage(stderr, argv[0]);
         return EXIT_USAGE_OR_NOT_FOUND;
     }
@@ -231,6 +262,7 @@ static int run(int argc, char **argv, bool descendants)
     int err = vly_snapshot_collect(&snap, "/proc");
     if (err != 0) {
         fprintf(stderr, "vly: cannot read /proc: %s\n", strerror(-err));
+        vly_snapshot_free(&snap);
         return EXIT_USAGE_OR_NOT_FOUND;
     }
     vly_snapshot_build_tree(&snap);
@@ -245,8 +277,8 @@ static int run(int argc, char **argv, bool descendants)
     }
 
     bool missing = false;
-    for (int i = first_target; i < argc; i++) {
-        missing |= select_target(&snap, argv[i], selected) == 0;
+    for (int i = 0; i < target_count; i++) {
+        missing |= select_target(&snap, targets[i], selected) == 0;
     }
 
     /* In tree mode, a process inside an already selected tree is covered. */

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -53,6 +54,34 @@ static pid_t spawn_tree(void)
         close(ready[0]);
         spawn(true);
         spawn(false);
+        (void)!write(ready[1], "x", 1);
+        close(ready[1]);
+        for (;;) {
+            pause();
+        }
+    }
+
+    close(ready[1]);
+    char c;
+    (void)!read(ready[0], &c, 1);
+    close(ready[0]);
+    return pid;
+}
+
+/* Forks a parent with `count` cooperative children. */
+static pid_t spawn_wide_tree(int count)
+{
+    int ready[2];
+    if (pipe(ready) != 0) {
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(ready[0]);
+        for (int i = 0; i < count; i++) {
+            spawn(false);
+        }
         (void)!write(ready[1], "x", 1);
         close(ready[1]);
         for (;;) {
@@ -158,6 +187,48 @@ static void test_kill_many_shares_grace_and_dedupes(void)
 
     CHECK(waitpid(tree, NULL, 0) == tree);
     CHECK(waitpid(stubborn, NULL, 0) == stubborn);
+    vly_snapshot_free(&snap);
+}
+
+/* Running out of file descriptors must be reported as a failure, not as
+ * processes that had already exited. */
+static void test_fd_exhaustion_is_reported(void)
+{
+    enum { CHILDREN = 40 };
+    vly_snapshot snap;
+    vly_snapshot_init(&snap);
+    pid_t parent = spawn_wide_tree(CHILDREN);
+    int32_t index = take_snapshot(&snap, parent);
+
+    /* Remember the children: once the parent dies they are reparented and
+     * no longer reachable through its tree. */
+    pid_t children[CHILDREN];
+    size_t child_count = 0;
+    for (int32_t c = snap.procs[index].first_child; c != VLY_NO_INDEX && child_count < CHILDREN;
+         c = snap.procs[c].next_sibling) {
+        children[child_count++] = snap.procs[c].pid;
+    }
+    CHECK(child_count == CHILDREN);
+
+    struct rlimit saved;
+    getrlimit(RLIMIT_NOFILE, &saved);
+    struct rlimit low = {.rlim_cur = 24, .rlim_max = saved.rlim_max};
+    CHECK(setrlimit(RLIMIT_NOFILE, &low) == 0);
+
+    vly_kill_report report;
+    CHECK(vly_kill_tree(&snap, index, &fast, &report) == 0);
+    setrlimit(RLIMIT_NOFILE, &saved);
+
+    CHECK(report.failed > 0);
+    CHECK(report.vanished == 0);
+    CHECK(report.targeted + report.failed == CHILDREN + 1);
+
+    /* Clean up whatever was left running. */
+    for (size_t i = 0; i < child_count; i++) {
+        kill(children[i], SIGKILL);
+    }
+    kill(parent, SIGKILL);
+    waitpid(parent, NULL, 0);
     vly_snapshot_free(&snap);
 }
 
@@ -315,6 +386,7 @@ int main(void)
     test_kill_escalates_to_sigkill();
     test_kill_tree();
     test_kill_many_shares_grace_and_dedupes();
+    test_fd_exhaustion_is_reported();
     test_zombie_is_not_targeted();
     test_exited_process_is_vanished();
     test_reused_pid_is_not_signalled();

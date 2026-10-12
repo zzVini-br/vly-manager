@@ -21,6 +21,11 @@ const char *fmt_style(const char *style);
 /* Formats a byte count as a short human-readable size, e.g. "1.4G", "512M". */
 void fmt_memory(unsigned long long bytes, char *buf, size_t size);
 
+/* Copies `name` into `out` with control characters (C0, DEL and UTF-8
+ * encoded C1) replaced by '?'. Process names are chosen by whoever runs the
+ * process, so they must never reach the terminal raw. */
+void fmt_safe_name(const char *name, char *out, size_t size);
+
 /* Returns the user name for `uid` (cached), or the numeric uid. */
 const char *fmt_user(uid_t uid);
 

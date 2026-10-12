@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 
 #include "commands.h"
 #include "vly/version.h"
@@ -34,8 +35,22 @@ static void print_usage(FILE *out)
                  "Run 'vly COMMAND --help' for details on a command.\n");
 }
 
+/* Killing a tree takes one pidfd per process, and the default soft limit
+ * (often 1024) is easy to exceed. vly only uses poll(), never select(), so
+ * raising the soft limit to the hard limit is safe. */
+static void raise_open_file_limit(void)
+{
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0 && limit.rlim_cur < limit.rlim_max) {
+        limit.rlim_cur = limit.rlim_max;
+        setrlimit(RLIMIT_NOFILE, &limit);
+    }
+}
+
 int main(int argc, char **argv)
 {
+    raise_open_file_limit();
+
     if (argc < 2) {
         print_usage(stderr);
         return 1;

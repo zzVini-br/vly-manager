@@ -64,11 +64,14 @@ static void print_row(list_view *view, const vly_process *proc, const char *pref
     char mem[16];
     fmt_memory(proc->rss_pages * view->page_size, mem, sizeof(mem));
 
+    char name[VLY_NAME_SIZE];
+    fmt_safe_name(proc->name, name, sizeof(name));
+
     const char *style = state_style(proc->state);
     const char *reset = fmt_style(FMT_RESET);
     printf("%7d %s%c%s %-10.10s %5.1f %6s  %s%s%s%s%s%s%s\n", (int)proc->pid, style, proc->state,
            reset, fmt_user(proc->uid), proc->cpu_percent, mem, fmt_style(FMT_DIM), prefix, branch,
-           reset, style, proc->name, reset);
+           reset, style, name, reset);
     view->shown++;
 }
 

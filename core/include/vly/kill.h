@@ -29,6 +29,8 @@ typedef struct vly_kill_report {
     size_t denied;     /* not ours to signal (EPERM): needs root */
     size_t vanished;   /* exited, or pid reused, before we got to it */
     size_t zombies;    /* already dead; only their parent can reap them */
+    size_t failed;     /* left untouched after a system error, such as running out of
+                          file descriptors (EMFILE) */
 } vly_kill_report;
 
 /*
