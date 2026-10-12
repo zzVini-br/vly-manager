@@ -1,15 +1,24 @@
-# vly-manager
+<p align="center">
+  <img src="assets/vly-manager.svg" alt="vly-manager logo: Tux in aviator goggles peeking over a monitor that shows a process tree" width="160">
+</p>
 
-A fast, practical process manager for Linux, with a terminal UI first and a Qt GUI later.
+<h1 align="center">vly-manager</h1>
+
+<p align="center"><strong>Fly through your processes and system.</strong></p>
+
+A fast, practical process and system manager for Linux: see what is running, find it,
+and stop it, from a command line built for scripts or an interactive view.
 
 Built to solve a real annoyance: games launched through Steam/Proton leaving Steam
 convinced a game is still running, so it ignores `SIGTERM` and logout or shutdown hangs
 until systemd's stop timeout expires.
 
-> **Status:** early development. v0.1.0 ships the command line; the interactive
-> terminal UI is next. See the [changelog](CHANGELOG.md) for what changed in each release.
+> **Status:** early development. v0.1 shipped the command line; the interactive view
+> is in progress. See the [changelog](CHANGELOG.md) for what changed in each release.
 
 ## Usage
+
+<img align="right" src="assets/vly-manager-pointing.svg" alt="Tux in aviator goggles pointing at a monitor full of processes" width="120">
 
 ```sh
 vly list                  # process tree with CPU and memory usage
@@ -46,31 +55,21 @@ Exit status, for scripts:
 
 ## Roadmap
 
-**v0.1.0: command line** (released)
+vly-manager is growing from a command-line tool into a full process and system monitor.
 
-- [x] Process tree with pid, state, user, CPU and memory
-- [x] Filter by name
-- [x] Stop a process or a whole tree (`SIGTERM`, wait, then `SIGKILL`)
-- [x] Highlight zombie (`Z`) and uninterruptible (`D`) processes
-- [x] Scriptable CLI: `vly kill-tree steam`
-
-**v0.2.0: terminal UI**
-
-- [ ] Interactive, auto-refreshing process tree, dark theme by default
-- [ ] Threads view per process
-- [ ] Select and stop processes or trees from the keyboard
-
-**v0.3.0: packaging**
-
-- [ ] `.deb` package with a desktop entry
-
-**Later**
-
-- [ ] Qt GUI, with polkit for stopping other users' processes
+- [x] **Command line** (v0.1): list, filter and stop processes or whole trees, safely
+- [ ] **Interactive view** (v0.2, in progress): a live process tree you can search,
+      filter, sort and act on from the keyboard
+- [ ] **System activity**: network and disk usage, per process and for the whole system
+- [ ] **Apps and processes**: desktop applications told apart from background processes,
+      as in a desktop task manager
+- [ ] **Packaging**: a `.deb` package with a desktop entry
+- [ ] **Graphical interface**: a Qt front end, with polkit for other users' processes
 
 ## Building
 
-Requirements: a C11 compiler, CMake ≥ 3.25 and Linux ≥ 5.3 (for pidfds).
+Requirements: a C11 compiler, CMake ≥ 3.25, ncurses (`libncurses-dev`), pkg-config and
+Linux ≥ 5.3 (for pidfds).
 
 ```sh
 cmake -B build
