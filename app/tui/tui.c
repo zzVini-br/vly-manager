@@ -12,6 +12,7 @@
 #include "format.h"
 #include "theme.h"
 #include "tree_view.h"
+#include "quickfind.h"
 #include "vly/snapshot.h"
 #include "vly/version.h"
 
@@ -34,6 +35,8 @@ typedef struct tui {
     vly_snapshot *cur;
     vly_snapshot *prev;
     tree_view view;
+    quickfind find;
+    bool find_failed; /* the text being typed matches no visible process */
     size_t process_count; /* user-space processes in `cur` */
     uint64_t next_refresh_ms;
     long ticks_per_second;
@@ -224,10 +227,13 @@ static void draw_footer(const tui *t)
 
     if (t->error != 0) {
         snprintf(text, sizeof(text), " vly: %s", strerror(-t->error));
+    } else if (quickfind_active(&t->find, monotonic_ms())) {
+        snprintf(text, sizeof(text), " find: %s%s", t->find.text,
+                 t->find_failed ? "   (no match)" : "");
     } else {
         snprintf(text, sizeof(text),
                  " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "Esc quit");
+                 "type a name to jump   Esc quit");
     }
 
     theme_use(ROLE_BAR, A_NORMAL);
@@ -252,9 +258,33 @@ static void draw(tui *t)
     refresh();
 }
 
+/* Keys that type into the search: printable ASCII, except those kept for
+ * commands. */
+static bool is_find_key(int key)
+{
+    return key >= ' ' && key <= '~' && key != '/' && key != '?';
+}
+
+static void find(tui *t, char c)
+{
+    quickfind_step step = quickfind_feed(&t->find, c, monotonic_ms());
+    t->find_failed = !tree_view_select_prefix(&t->view, step.text, step.from_next);
+}
+
 /* Returns false when the key should end the program. */
 static bool handle_key(tui *t, int key)
 {
+    if (is_find_key(key)) {
+        find(t, (char)key);
+        draw(t);
+        return true;
+    }
+
+    /* Any other key ends the search being typed. */
+    if (key != KEY_RESIZE) {
+        quickfind_reset(&t->find);
+    }
+
     long page = (long)body_height() - 1;
     if (page < 1) {
         page = 1;
@@ -319,6 +349,7 @@ int tui_run(const tui_options *opts)
     vly_snapshot_init(&t.snapshots[0]);
     vly_snapshot_init(&t.snapshots[1]);
     tree_view_init(&t.view);
+    quickfind_reset(&t.find);
     t.cur = &t.snapshots[0];
     t.prev = &t.snapshots[1];
     t.ticks_per_second = sysconf(_SC_CLK_TCK);
