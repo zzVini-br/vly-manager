@@ -4,7 +4,8 @@ add_executable(vly
     format.c
     main.c
     match.c
-    tui/theme.c)
+    tui/theme.c
+    tui/tui.c)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(NCURSESW REQUIRED IMPORTED_TARGET ncursesw)

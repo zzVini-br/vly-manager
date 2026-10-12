@@ -1,8 +1,11 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <unistd.h>
 
 #include "commands.h"
+#include "tui/tui.h"
 #include "vly/version.h"
 
 typedef struct command {
@@ -21,7 +24,10 @@ static const command commands[] = {
 
 static void print_usage(FILE *out)
 {
-    fprintf(out, "Usage: vly COMMAND [OPTIONS]\n"
+    fprintf(out, "Usage: vly [--no-theme]\n"
+                 "       vly COMMAND [OPTIONS]\n"
+                 "\n"
+                 "Without a command, vly opens the interactive process manager.\n"
                  "\n"
                  "Commands:\n");
     for (size_t i = 0; i < COMMAND_COUNT; i++) {
@@ -29,6 +35,7 @@ static void print_usage(FILE *out)
     }
     fprintf(out, "\n"
                  "Options:\n"
+                 "  --no-theme  Keep the terminal's own background in the interactive view\n"
                  "  --version   Print version and exit\n"
                  "  --help      Show this help\n"
                  "\n"
@@ -51,9 +58,15 @@ int main(int argc, char **argv)
 {
     raise_open_file_limit();
 
-    if (argc < 2) {
-        print_usage(stderr);
-        return 1;
+    bool no_theme = argc == 2 && strcmp(argv[1], "--no-theme") == 0;
+    if (argc < 2 || no_theme) {
+        /* The interactive view needs a terminal on both ends. */
+        if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+            print_usage(stderr);
+            return 1;
+        }
+        tui_options opts = {.own_background = !no_theme};
+        return tui_run(&opts);
     }
 
     if (strcmp(argv[1], "--version") == 0) {
