@@ -100,6 +100,12 @@ Linux has no way to terminate a single thread from outside its process: fatal si
 always take down the whole thread group. vly will show threads for inspection, and the
 kill action on a thread will kill its owning process (with a warning).
 
+## Contributing
+
+Contributions are welcome: bug reports, ideas and pull requests. Open an issue before
+starting on a larger change so we can agree on the approach. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and shape your commits.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
