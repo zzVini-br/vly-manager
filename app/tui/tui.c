@@ -59,6 +59,7 @@ typedef struct tui {
 
     kill_jobs jobs;
     threads_view threads; /* open: the list shows one process's threads */
+    bool showing_help;
 
     confirm_kind confirm;
     proc_key confirm_key;            /* the process the box asks about */
@@ -364,7 +365,7 @@ static void draw_footer(const tui *t)
         snprintf(text, sizeof(text), " %s%s", t->message_is_alert ? "! " : "", t->message);
     } else if (t->threads.open) {
         snprintf(text, sizeof(text),
-                 " \xe2\x86\x91\xe2\x86\x93 move   Del stop process   Enter/Esc back   F10 quit");
+                 " \xe2\x86\x91\xe2\x86\x93 move   Del stop process   Enter/Esc back   ? help   F10 quit");
     } else if (t->editing_filter) {
         snprintf(text, sizeof(text), " filter: %s_   Enter keep   Esc clear", t->view.filter);
     } else if (t->view.filter[0] != '\0') {
@@ -375,8 +376,7 @@ static void draw_footer(const tui *t)
                  t->find_failed ? "   (no match)" : "");
     } else {
         snprintf(text, sizeof(text),
-                 " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "Enter threads   Del stop   Shift+Del stop tree   / filter   Tab sort   Esc quit");
+                 " Del stop  Shift+Del tree  Enter threads  / filter  Tab sort  ? help  Esc quit");
     }
 
     bool alert = t->error != 0 || (t->confirm == CONFIRM_NONE && monotonic_ms() < t->message_until_ms &&
@@ -443,6 +443,71 @@ static void draw_confirm(const tui *t)
     put_clipped(&col, "Enter stop   Esc cancel");
 }
 
+static const char *const help_lines[][2] = {
+    {"\xe2\x86\x91 \xe2\x86\x93  PgUp PgDn  Home End", "move"},
+    {"\xe2\x86\x90 \xe2\x86\x92", "collapse / expand, go to parent / child"},
+    {"type a name", "jump to it; repeat a letter to cycle"},
+    {"/", "filter by name (Esc clears it)"},
+    {"Tab", "tree, sorted by CPU, sorted by memory"},
+    {"Enter", "threads of the selected process"},
+    {"Del", "stop the process (SIGTERM, then SIGKILL)"},
+    {"Shift+Del", "stop the process and its descendants"},
+    {"Esc  F10", "quit"},
+};
+
+#define HELP_LINE_COUNT (sizeof(help_lines) / sizeof(help_lines[0]))
+#define HELP_KEY_WIDTH 26
+
+static void draw_help(void)
+{
+    int width = 72 < COLS - 2 ? 72 : COLS - 2;
+    int height = (int)HELP_LINE_COUNT + 7;
+    int top = HEADER_ROWS + ((int)body_height() - height) / 2;
+    int left = (COLS - width) / 2;
+    if (top < 0) {
+        top = 0;
+    }
+
+    theme_use(ROLE_BAR, A_NORMAL);
+    for (int r = 0; r < height && top + r < LINES - 1; r++) {
+        mvhline(top + r, left, ' ', width);
+    }
+
+    int row = top + 1;
+    int col = left + 3;
+    move(row, col);
+    theme_use(ROLE_BAR, A_BOLD);
+    put_clipped(&col, "Keys");
+    row += 2;
+
+    for (size_t i = 0; i < HELP_LINE_COUNT && row < LINES - 1; i++, row++) {
+        col = left + 3;
+        move(row, col);
+        theme_use(ROLE_ACCENT, A_NORMAL);
+        put_clipped(&col, help_lines[i][0]);
+        col = left + 3 + HELP_KEY_WIDTH;
+        move(row, col);
+        theme_use(ROLE_BAR, A_NORMAL);
+        put_clipped(&col, help_lines[i][1]);
+    }
+
+    row++;
+    if (row < LINES - 1) {
+        col = left + 3;
+        move(row, col);
+        theme_use(ROLE_BAR, A_NORMAL);
+        put_clipped(&col, "States: ");
+        theme_use(ROLE_ZOMBIE, A_NORMAL);
+        put_clipped(&col, "Z");
+        theme_use(ROLE_BAR, A_NORMAL);
+        put_clipped(&col, " zombie, already dead   ");
+        theme_use(ROLE_DISK_WAIT, A_NORMAL);
+        put_clipped(&col, "D");
+        theme_use(ROLE_BAR, A_NORMAL);
+        put_clipped(&col, " waiting on I/O, cannot be killed");
+    }
+}
+
 static void draw(tui *t)
 {
     erase();
@@ -454,6 +519,9 @@ static void draw(tui *t)
         draw_body(t);
         if (t->confirm != CONFIRM_NONE) {
             draw_confirm(t);
+        }
+        if (t->showing_help) {
+            draw_help();
         }
         draw_footer(t);
     }
@@ -682,6 +750,21 @@ static bool handle_threads_key(tui *t, int key)
 /* Returns false when the key should end the program. */
 static bool handle_key(tui *t, int key)
 {
+    /* The help box takes any key to close. */
+    if (t->showing_help) {
+        if (key != KEY_RESIZE) {
+            t->showing_help = false;
+        }
+        draw(t);
+        return true;
+    }
+
+    if ((key == '?' && !t->editing_filter) || key == KEY_F(1)) {
+        t->showing_help = true;
+        draw(t);
+        return true;
+    }
+
     if (t->confirm != CONFIRM_NONE) {
         handle_confirm_key(t, key);
         draw(t);
