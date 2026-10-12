@@ -4,7 +4,7 @@
 
 <h1 align="center">vly-manager</h1>
 
-<p align="center"><strong>Fly through your processes and system.</strong></p>
+<p align="center"><strong>"Fly" through your processes and system.</strong></p>
 
 A fast, practical process and system manager for Linux: see what is running, find it,
 and stop it, from a command line built for scripts or an interactive view.
