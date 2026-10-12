@@ -27,6 +27,7 @@
 #define MESSAGE_MS 5000
 
 #define KEY_ESCAPE 27
+#define KEY_TAB '\t'
 #define KEY_ASCII_BACKSPACE 8
 #define KEY_ASCII_DELETE 127
 
@@ -214,8 +215,16 @@ static void draw_header(const tui *t)
     mvhline(1, 0, ' ', COLS);
     col = 0;
     move(1, 0);
-    put_clipped(&col, t->threads.open ? "    TID S  CPU%  THREAD"
-                                      : "    PID S USER        CPU%    MEM  NAME");
+    /* The sorted column is marked with ▾ in place of the space before it. */
+    const char *columns = "    PID S USER        CPU%    MEM  NAME";
+    if (t->threads.open) {
+        columns = "    TID S  CPU%  THREAD";
+    } else if (t->view.mode == TREE_VIEW_BY_CPU) {
+        columns = "    PID S USER       \xe2\x96\xbe" "CPU%    MEM  NAME";
+    } else if (t->view.mode == TREE_VIEW_BY_MEMORY) {
+        columns = "    PID S USER        CPU%   \xe2\x96\xbe" "MEM  NAME";
+    }
+    put_clipped(&col, columns);
 }
 
 static theme_role state_role(char state)
@@ -367,7 +376,7 @@ static void draw_footer(const tui *t)
     } else {
         snprintf(text, sizeof(text),
                  " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "Enter threads   Del stop   Shift+Del stop tree   / filter   Esc quit");
+                 "Enter threads   Del stop   Shift+Del stop tree   / filter   Tab sort   Esc quit");
     }
 
     bool alert = t->error != 0 || (t->confirm == CONFIRM_NONE && monotonic_ms() < t->message_until_ms &&
@@ -727,6 +736,12 @@ static bool handle_key(tui *t, int key)
         break;
     case KEY_F(10):
         return false;
+    case KEY_TAB:
+        /* Tree, then by CPU, then by memory, then the tree again. */
+        t->error = tree_view_set_mode(&t->view, t->view.mode == TREE_VIEW_TREE     ? TREE_VIEW_BY_CPU
+                                                : t->view.mode == TREE_VIEW_BY_CPU ? TREE_VIEW_BY_MEMORY
+                                                                                   : TREE_VIEW_TREE);
+        break;
     case KEY_DC:
         if (selected_index(t) != VLY_NO_INDEX) {
             start_stop(t, selected_index(t), false);
