@@ -18,6 +18,13 @@
 #define REFRESH_MS 1000
 #define INPUT_POLL_MS 100
 
+#define KEY_ESCAPE 27
+
+/* How long curses waits after Esc for the rest of an escape sequence (arrow
+ * keys arrive as one). Its default of a full second makes Esc feel stuck;
+ * terminal sequences arrive within a few milliseconds. */
+#define ESCAPE_DELAY_MS 25
+
 /* Rows taken by the header bar, column titles and footer bar. */
 #define HEADER_ROWS 2
 #define FOOTER_ROWS 1
@@ -220,7 +227,7 @@ static void draw_footer(const tui *t)
     } else {
         snprintf(text, sizeof(text),
                  " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "q quit");
+                 "Esc quit");
     }
 
     theme_use(ROLE_BAR, A_NORMAL);
@@ -254,8 +261,8 @@ static bool handle_key(tui *t, int key)
     }
 
     switch (key) {
-    case 'q':
-    case 'Q':
+    case KEY_ESCAPE:
+    case KEY_F(10):
         return false;
     case KEY_UP:
         tree_view_move(&t->view, -1);
@@ -297,6 +304,7 @@ static void setup_screen(const tui_options *opts)
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
+    set_escdelay(ESCAPE_DELAY_MS);
     curs_set(0);
     timeout(INPUT_POLL_MS);
 
