@@ -16,9 +16,30 @@ until systemd's stop timeout expires.
 > **Status:** early development. v0.1 shipped the command line; the interactive view
 > is in progress. See the [changelog](CHANGELOG.md) for what changed in each release.
 
-## Usage
+## Interactive view
 
 <img align="right" src="assets/vly-manager-pointing.svg" alt="Tux in aviator goggles pointing at a monitor full of processes" width="120">
+
+Run `vly` with no arguments in a terminal. The process tree refreshes every second, on
+a dark background (`vly --no-theme` keeps your terminal's own).
+
+| Key | Action |
+|-----|--------|
+| `↑` `↓` `PgUp` `PgDn` `Home` `End` | move |
+| `←` `→` | collapse / expand, go to parent / child |
+| type a name | jump to it; repeat a letter to cycle through matches |
+| `/` | filter by name (`Esc` clears the filter) |
+| `Tab` | switch between the tree and lists sorted by CPU or memory |
+| `Enter` | show the threads of the selected process |
+| `Del` | stop the process (`SIGTERM`, then `SIGKILL`) |
+| `Shift+Del` | stop the process and all its descendants, after a confirmation |
+| `?` `F1` | help |
+| `Esc` `F10` | quit |
+
+Stopping runs in the background, so the view stays live while processes get their
+grace period; rows being stopped are marked, and the footer reports the outcome.
+
+## Command line
 
 ```sh
 vly list                  # process tree with CPU and memory usage
@@ -90,15 +111,17 @@ Useful options:
 
 ```
 core/    libvly: reads /proc, builds the process tree, sends signals (no UI code)
-app/     vly: command line (and, soon, the terminal UI)
+app/     vly: command line
+app/tui/ interactive view; tree_view, quickfind, threads_view and kill_jobs hold its
+         logic without curses, so it is unit-tested
 tests/   unit tests and end-to-end CLI tests (CTest)
 ```
 
 ## A note on threads
 
 Linux has no way to terminate a single thread from outside its process: fatal signals
-always take down the whole thread group. vly will show threads for inspection, and the
-kill action on a thread will kill its owning process (with a warning).
+always take down the whole thread group. vly shows threads for inspection, and `Del` on
+a thread asks before stopping its whole process.
 
 ## Contributing
 
