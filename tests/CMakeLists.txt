@@ -17,6 +17,8 @@ vly_add_test(test_stat_parser)
 vly_add_test(test_threads)
 target_link_libraries(test_threads PRIVATE Threads::Threads)
 vly_add_test(test_tree)
+vly_add_test(test_tree_view)
+target_link_libraries(test_tree_view PRIVATE vly_view)
 vly_add_test(test_version)
 
 add_test(NAME test_cli
