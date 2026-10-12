@@ -55,6 +55,14 @@ bool kill_jobs_busy(const kill_jobs *jobs);
 /* Takes the result of one finished job, if any, and frees the job. */
 bool kill_jobs_reap(kill_jobs *jobs, kill_result *result);
 
+/*
+ * Writes a one-line summary of `result` for the status bar into `buf`, e.g.
+ * "Stopped steam and 13 descendants (2 needed SIGKILL)". Returns true when
+ * the outcome needs the user's attention (nothing or not everything was
+ * stopped).
+ */
+bool kill_result_describe(const kill_result *result, char *buf, size_t size);
+
 /* Waits for every running job to finish, discarding results. */
 void kill_jobs_finish_all(kill_jobs *jobs);
 

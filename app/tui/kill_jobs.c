@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -182,6 +183,68 @@ bool kill_jobs_reap(kill_jobs *jobs, kill_result *result)
             jobs->slots[slot] = NULL;
             return true;
         }
+    }
+    return false;
+}
+
+static const char *plural(size_t n, const char *one, const char *many)
+{
+    return n == 1 ? one : many;
+}
+
+bool kill_result_describe(const kill_result *result, char *buf, size_t size)
+{
+    const vly_kill_report *r = &result->report;
+    size_t stopped = r->terminated + r->killed;
+
+    /* fmt_safe_name() lives with the curses code; the name only needs to be
+     * printable here, so control characters become '?'. */
+    char name[VLY_NAME_SIZE];
+    size_t len = 0;
+    for (const unsigned char *p = (const unsigned char *)result->name; *p != '\0'; p++) {
+        name[len++] = *p < 0x20 || *p == 0x7f ? '?' : (char)*p;
+    }
+    name[len] = '\0';
+
+    if (result->error != 0) {
+        snprintf(buf, size, "Could not stop %s: %s", name,
+                 result->error == -EINVAL ? "vly never stops pid 1, kernel threads or itself"
+                                          : strerror(-result->error));
+        return true;
+    }
+    if (r->denied > 0) {
+        snprintf(buf, size, "%s: %zu %s another user; run vly with sudo", name, r->denied,
+                 plural(r->denied, "process belongs to", "processes belong to"));
+        return true;
+    }
+    if (r->survivors > 0) {
+        snprintf(buf, size, "%s: %zu %s running even after SIGKILL (stuck in D state?)", name,
+                 r->survivors, plural(r->survivors, "process still", "processes still"));
+        return true;
+    }
+    if (r->failed > 0) {
+        snprintf(buf, size, "%s: %zu %s not stopped because of a system error", name, r->failed,
+                 plural(r->failed, "process was", "processes were"));
+        return true;
+    }
+    if (stopped == 0 && r->zombies > 0) {
+        snprintf(buf, size, "%s is a zombie: already dead, only its parent can clear it", name);
+        return true;
+    }
+    if (stopped == 0) {
+        snprintf(buf, size, "%s had already exited", name);
+        return false;
+    }
+
+    char detail[64] = "";
+    if (r->killed > 0) {
+        snprintf(detail, sizeof(detail), " (%zu needed SIGKILL)", r->killed);
+    }
+    if (result->tree && stopped > 1) {
+        snprintf(buf, size, "Stopped %s and %zu %s%s", name, stopped - 1,
+                 plural(stopped - 1, "descendant", "descendants"), detail);
+    } else {
+        snprintf(buf, size, "Stopped %s%s", name, r->killed > 0 ? " (needed SIGKILL)" : "");
     }
     return false;
 }
