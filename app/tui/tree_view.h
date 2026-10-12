@@ -30,8 +30,18 @@ typedef struct tree_row {
     int depth;     /* 0 for top-level processes */
 } tree_row;
 
+/* How rows are arranged. */
+typedef enum tree_view_mode {
+    TREE_VIEW_TREE,      /* parents and children */
+    TREE_VIEW_BY_CPU,    /* flat, highest CPU first */
+    TREE_VIEW_BY_MEMORY, /* flat, largest resident memory first */
+} tree_view_mode;
+
+struct tree_view_sort_item;
+
 typedef struct tree_view {
     bool show_kernel;
+    tree_view_mode mode;
     char filter[TREE_VIEW_FILTER_SIZE]; /* empty: no filter */
 
     const vly_snapshot *snap; /* the snapshot the rows refer to */
@@ -42,6 +52,9 @@ typedef struct tree_view {
     proc_key *collapsed;
     size_t collapsed_count;
     size_t collapsed_capacity;
+
+    struct tree_view_sort_item *sort_items; /* scratch space for the flat modes */
+    size_t sort_capacity;
 
     size_t cursor;      /* selected row, valid when row_count > 0 */
     proc_key selection; /* the selected process, kept across rebuilds */
@@ -65,6 +78,14 @@ int tree_view_rebuild(tree_view *view, const vly_snapshot *snap);
  * moves to the first row otherwise. Returns 0 or -ENOMEM.
  */
 int tree_view_set_filter(tree_view *view, const char *text);
+
+/*
+ * Switches between the tree and the flat lists sorted by CPU or memory,
+ * keeping the selection. In the flat lists every row is at depth 0, the
+ * filter keeps only matching processes (no subtrees), and Left/Right do
+ * nothing. Returns 0 or -ENOMEM.
+ */
+int tree_view_set_mode(tree_view *view, tree_view_mode mode);
 
 /* The selected process, or NULL when there are no rows. */
 const vly_process *tree_view_selected(const tree_view *view);

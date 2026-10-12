@@ -310,8 +310,65 @@ static void test_filter(void)
     vly_snapshot_free(&snap);
 }
 
+static void test_sorted_modes(void)
+{
+    vly_snapshot snap;
+    load_fixtures(&snap);
+
+    /* CPU usage comes from two snapshots; set it directly here. Resident
+     * pages in the fixtures: systemd 3000, steam 52000, reaper 128, 101 0. */
+    snap.procs[vly_snapshot_index_of(&snap, 1)].cpu_percent = 10.0;
+    snap.procs[vly_snapshot_index_of(&snap, 100)].cpu_percent = 30.0;
+    snap.procs[vly_snapshot_index_of(&snap, 1000)].cpu_percent = 50.0;
+
+    tree_view view;
+    tree_view_init(&view);
+    CHECK(tree_view_rebuild(&view, &snap) == 0);
+    tree_view_move_to_end(&view); /* reaper */
+
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_BY_CPU) == 0);
+    CHECK(view.row_count == 4);
+    if (view.row_count == 4) {
+        CHECK(row_pid(&view, 0) == 1000);
+        CHECK(row_pid(&view, 1) == 100);
+        CHECK(row_pid(&view, 2) == 1);
+        CHECK(row_pid(&view, 3) == 101);
+        CHECK(view.rows[1].depth == 0);
+        CHECK(prefix_is(&view, 1, ""));
+    }
+    CHECK(selected_pid(&view) == 1000); /* the selection follows the process */
+
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_BY_MEMORY) == 0);
+    if (view.row_count == 4) {
+        CHECK(row_pid(&view, 0) == 100);
+        CHECK(row_pid(&view, 1) == 1);
+        CHECK(row_pid(&view, 2) == 1000);
+        CHECK(row_pid(&view, 3) == 101);
+    }
+
+    /* Nothing to fold in a flat list. */
+    tree_view_move_to_start(&view);
+    CHECK(tree_view_left(&view) == 0);
+    CHECK(tree_view_right(&view) == 0);
+    CHECK(view.row_count == 4 && view.collapsed_count == 0);
+
+    /* The filter keeps matching processes only, without their subtrees. */
+    CHECK(tree_view_set_filter(&view, "s") == 0);
+    CHECK(view.row_count == 2);
+    CHECK(row_pid(&view, 0) == 100 && row_pid(&view, 1) == 1);
+    CHECK(tree_view_set_filter(&view, "") == 0);
+
+    /* Back to the tree. */
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_TREE) == 0);
+    CHECK(row_pid(&view, 0) == 1 && view.rows[1].depth == 1);
+
+    tree_view_free(&view);
+    vly_snapshot_free(&snap);
+}
+
 int main(void)
 {
+    test_sorted_modes();
     test_filter();
     test_select_by_prefix();
     test_rows_and_prefixes();
