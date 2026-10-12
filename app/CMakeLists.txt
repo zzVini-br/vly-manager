@@ -5,6 +5,7 @@ add_library(vly_view STATIC
     match.c
     tui/kill_jobs.c
     tui/quickfind.c
+    tui/threads_view.c
     tui/tree_view.c)
 target_include_directories(vly_view PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
