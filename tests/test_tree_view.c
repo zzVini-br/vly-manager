@@ -214,8 +214,45 @@ static void test_scrolling(void)
     vly_snapshot_free(&snap);
 }
 
+static void test_select_by_prefix(void)
+{
+    vly_snapshot snap;
+    load_fixtures(&snap);
+    tree_view view;
+    tree_view_init(&view);
+    CHECK(tree_view_rebuild(&view, &snap) == 0);
+    CHECK(selected_pid(&view) == 1); /* systemd */
+
+    /* From the next row, wrapping around: steam, then back to systemd. */
+    CHECK(tree_view_select_prefix(&view, "s", true));
+    CHECK(selected_pid(&view) == 100);
+    CHECK(tree_view_select_prefix(&view, "s", true));
+    CHECK(selected_pid(&view) == 1);
+
+    /* From the current row, a match there is kept. */
+    CHECK(tree_view_select_prefix(&view, "sy", false));
+    CHECK(selected_pid(&view) == 1);
+
+    /* Case-insensitive, and names with spaces work. */
+    CHECK(tree_view_select_prefix(&view, "WEB co", false));
+    CHECK(selected_pid(&view) == 101);
+    CHECK(tree_view_select_prefix(&view, "re", true));
+    CHECK(selected_pid(&view) == 1000);
+
+    /* No match: the cursor stays. */
+    CHECK(!tree_view_select_prefix(&view, "zzz", true));
+    CHECK(selected_pid(&view) == 1000);
+
+    /* Hidden rows are not searched: kthreadd is a kernel thread. */
+    CHECK(!tree_view_select_prefix(&view, "kthread", true));
+
+    tree_view_free(&view);
+    vly_snapshot_free(&snap);
+}
+
 int main(void)
 {
+    test_select_by_prefix();
     test_rows_and_prefixes();
     test_navigation();
     test_selection_follows_process();

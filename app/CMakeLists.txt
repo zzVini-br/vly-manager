@@ -1,6 +1,7 @@
 # Curses-free view logic, shared by the terminal UI and its tests.
 add_library(vly_view STATIC
-    tui/tree_view.c)
+    tui/tree_view.c
+    tui/quickfind.c)
 target_include_directories(vly_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tui)
 target_link_libraries(vly_view PUBLIC vly::core)
 vly_set_warnings(vly_view)

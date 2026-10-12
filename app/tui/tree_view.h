@@ -72,6 +72,14 @@ int tree_view_left(tree_view *view);
  * it is already expanded. Returns 0 or -ENOMEM. */
 int tree_view_right(tree_view *view);
 
+/*
+ * Selects the first row, scanning down from the cursor (or the row after
+ * it, with `from_next`) and wrapping around, whose name starts with
+ * `prefix`, ignoring case. Returns false, leaving the cursor alone, if no
+ * visible row matches.
+ */
+bool tree_view_select_prefix(tree_view *view, const char *prefix, bool from_next);
+
 /* Scrolls so the cursor is within a window of `height` rows. */
 void tree_view_scroll_to_cursor(tree_view *view, size_t height);
 

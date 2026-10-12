@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 /* Tree drawing pieces, each 3 columns wide once a marker follows. */
 #define LINE_CONTINUES "\xe2\x94\x82  " /* "│  " */
@@ -275,6 +276,25 @@ int tree_view_right(tree_view *view)
     /* Expanded: the first child is the next row. */
     tree_view_move(view, 1);
     return 0;
+}
+
+bool tree_view_select_prefix(tree_view *view, const char *prefix, bool from_next)
+{
+    size_t len = strlen(prefix);
+    size_t count = view->row_count;
+    if (count == 0 || len == 0) {
+        return false;
+    }
+
+    size_t start = from_next ? view->cursor + 1 : view->cursor;
+    for (size_t step = 0; step < count; step++) {
+        size_t row = (start + step) % count;
+        if (strncasecmp(proc_at(view, view->rows[row].index)->name, prefix, len) == 0) {
+            select_row(view, row);
+            return true;
+        }
+    }
+    return false;
 }
 
 void tree_view_scroll_to_cursor(tree_view *view, size_t height)
