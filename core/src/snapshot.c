@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -147,6 +148,19 @@ int vly_snapshot_collect(vly_snapshot *snap, const char *proc_root)
 
     snap->timestamp_ns = monotonic_now_ns();
     return 0;
+}
+
+int vly_snapshot_collect_threads(vly_snapshot *snap, const char *proc_root, pid_t pid)
+{
+    /* PID/task has the same layout as /proc itself: one directory per
+     * thread id, each with a stat file in the same format. */
+    char path[PATH_MAX];
+    int len = snprintf(path, sizeof(path), "%s/%d/task", proc_root, (int)pid);
+    if (len < 0 || (size_t)len >= sizeof(path)) {
+        return -ENAMETOOLONG;
+    }
+
+    return vly_snapshot_collect(snap, path);
 }
 
 int32_t vly_snapshot_index_of(const vly_snapshot *snap, pid_t pid)
