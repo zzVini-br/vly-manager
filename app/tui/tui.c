@@ -16,6 +16,7 @@
 #include "theme.h"
 #include "tree_view.h"
 #include "quickfind.h"
+#include "threads_view.h"
 #include "vly/snapshot.h"
 #include "vly/version.h"
 
@@ -38,6 +39,13 @@
 #define HEADER_ROWS 2
 #define FOOTER_ROWS 1
 
+/* What the confirmation box is asking about, if anything. */
+typedef enum confirm_kind {
+    CONFIRM_NONE,
+    CONFIRM_TREE,    /* Shift+Del: a process and its descendants */
+    CONFIRM_PROCESS, /* Del on a thread: its whole process */
+} confirm_kind;
+
 typedef struct tui {
     vly_snapshot snapshots[2];
     vly_snapshot *cur;
@@ -49,9 +57,12 @@ typedef struct tui {
     size_t process_count; /* user-space processes in `cur` */
 
     kill_jobs jobs;
-    bool confirming;            /* the stop-tree dialog is open */
-    proc_key confirm_key;       /* the process it asks about */
-    size_t confirm_descendants; /* shown in the dialog */
+    threads_view threads; /* open: the list shows one process's threads */
+
+    confirm_kind confirm;
+    proc_key confirm_key;            /* the process the box asks about */
+    char confirm_name[VLY_NAME_SIZE]; /* printable */
+    size_t confirm_descendants;
 
     char message[192]; /* outcome of the last action, shown in the footer */
     bool message_is_alert;
@@ -135,6 +146,18 @@ static void refresh_data(tui *t)
     for (size_t i = 0; i < t->cur->count; i++) {
         t->process_count += !t->cur->procs[i].is_kernel_thread;
     }
+
+    if (t->threads.open) {
+        err = threads_view_refresh(&t->threads, "/proc", t->ticks_per_second, t->cpu_count);
+        if (err == -ESRCH) {
+            char name[VLY_NAME_SIZE];
+            fmt_safe_name(t->threads.owner_name, name, sizeof(name));
+            threads_view_close(&t->threads);
+            set_message(t, false, "%s exited", name);
+        } else if (err != 0) {
+            t->error = err;
+        }
+    }
 }
 
 /* Writes `text` from the current position up to the right edge, one UTF-8
@@ -158,7 +181,12 @@ static void draw_header(const tui *t)
 {
     char left[128];
     char right[64];
-    if (t->view.filter[0] != '\0') {
+    if (t->threads.open) {
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(t->threads.owner_name, name, sizeof(name));
+        snprintf(left, sizeof(left), "  \xc2\xb7  %s (%d)  \xc2\xb7  %zu threads", name,
+                 (int)t->threads.owner.pid, t->threads.cur->count);
+    } else if (t->view.filter[0] != '\0') {
         snprintf(left, sizeof(left), "  \xc2\xb7  %zu shown of %zu processes", t->view.row_count,
                  t->process_count);
     } else {
@@ -186,7 +214,8 @@ static void draw_header(const tui *t)
     mvhline(1, 0, ' ', COLS);
     col = 0;
     move(1, 0);
-    put_clipped(&col, "    PID S USER        CPU%    MEM  NAME");
+    put_clipped(&col, t->threads.open ? "    TID S  CPU%  THREAD"
+                                      : "    PID S USER        CPU%    MEM  NAME");
 }
 
 static theme_role state_role(char state)
@@ -250,8 +279,51 @@ static void draw_row(const tui *t, int screen_row, const tree_row *row, bool sel
     put_clipped(&col, hidden);
 }
 
+static void draw_thread_row(int screen_row, const vly_process *thread, bool selected)
+{
+    char columns[32];
+    char name[VLY_NAME_SIZE];
+    fmt_safe_name(thread->name, name, sizeof(name));
+
+    theme_role base = selected ? ROLE_SELECTED : ROLE_NORMAL;
+    theme_role state = selected ? ROLE_SELECTED : state_role(thread->state);
+
+    theme_use(base, A_NORMAL);
+    mvhline(screen_row, 0, ' ', COLS);
+    move(screen_row, 0);
+
+    int col = 0;
+    snprintf(columns, sizeof(columns), "%7d ", (int)thread->pid);
+    put_clipped(&col, columns);
+    char state_text[2] = {thread->state, '\0'};
+    theme_use(state, A_NORMAL);
+    put_clipped(&col, state_text);
+    snprintf(columns, sizeof(columns), " %5.1f  ", thread->cpu_percent);
+    theme_use(base, A_NORMAL);
+    put_clipped(&col, columns);
+    theme_use(state, A_NORMAL);
+    put_clipped(&col, name);
+}
+
+static void draw_threads(tui *t)
+{
+    size_t height = body_height();
+    threads_view_scroll_to_cursor(&t->threads, height);
+
+    const vly_snapshot *threads = t->threads.cur;
+    for (size_t i = 0; i < height && t->threads.scroll + i < threads->count; i++) {
+        size_t row = t->threads.scroll + i;
+        draw_thread_row(HEADER_ROWS + (int)i, &threads->procs[row], row == t->threads.cursor);
+    }
+}
+
 static void draw_body(tui *t)
 {
+    if (t->threads.open) {
+        draw_threads(t);
+        return;
+    }
+
     size_t height = body_height();
     tree_view_scroll_to_cursor(&t->view, height);
 
@@ -277,10 +349,13 @@ static void draw_footer(const tui *t)
 
     if (t->error != 0) {
         snprintf(text, sizeof(text), " vly: %s", strerror(-t->error));
-    } else if (t->confirming) {
+    } else if (t->confirm != CONFIRM_NONE) {
         snprintf(text, sizeof(text), " Enter stop   Esc cancel");
     } else if (monotonic_ms() < t->message_until_ms) {
         snprintf(text, sizeof(text), " %s%s", t->message_is_alert ? "! " : "", t->message);
+    } else if (t->threads.open) {
+        snprintf(text, sizeof(text),
+                 " \xe2\x86\x91\xe2\x86\x93 move   Del stop process   Enter/Esc back   F10 quit");
     } else if (t->editing_filter) {
         snprintf(text, sizeof(text), " filter: %s_   Enter keep   Esc clear", t->view.filter);
     } else if (t->view.filter[0] != '\0') {
@@ -292,10 +367,10 @@ static void draw_footer(const tui *t)
     } else {
         snprintf(text, sizeof(text),
                  " \xe2\x86\x91\xe2\x86\x93 move   \xe2\x86\x90\xe2\x86\x92 collapse/expand   "
-                 "Del stop   Shift+Del stop tree   / filter   Esc quit");
+                 "Enter threads   Del stop   Shift+Del stop tree   / filter   Esc quit");
     }
 
-    bool alert = t->error != 0 || (!t->confirming && monotonic_ms() < t->message_until_ms &&
+    bool alert = t->error != 0 || (t->confirm == CONFIRM_NONE && monotonic_ms() < t->message_until_ms &&
                                    t->message_is_alert);
     theme_use(ROLE_BAR, alert ? A_BOLD : A_NORMAL);
     mvhline(LINES - 1, 0, ' ', COLS);
@@ -304,26 +379,33 @@ static void draw_footer(const tui *t)
     put_clipped(&col, text);
 }
 
-/* The stop-tree confirmation: a plain box over the middle of the list. */
+/* The confirmation: a plain box over the middle of the list. */
 static void draw_confirm(const tui *t)
 {
-    char line[160];
-    int32_t index = vly_snapshot_index_of(t->cur, t->confirm_key.pid);
-    char name[VLY_NAME_SIZE] = "?";
-    if (index != VLY_NO_INDEX) {
-        fmt_safe_name(t->cur->procs[index].name, name, sizeof(name));
-    }
-    snprintf(line, sizeof(line), "%s (%d) and its %zu %s", name, (int)t->confirm_key.pid,
-             t->confirm_descendants, t->confirm_descendants == 1 ? "descendant" : "descendants");
+    const char *title;
+    char lines[2][160] = {"", ""};
 
-    int width = (int)strlen(line) + 6;
-    if (width < 34) {
-        width = 34;
+    if (t->confirm == CONFIRM_TREE) {
+        title = "Stop process tree?";
+        snprintf(lines[0], sizeof(lines[0]), "%s (%d) and its %zu %s", t->confirm_name,
+                 (int)t->confirm_key.pid, t->confirm_descendants,
+                 t->confirm_descendants == 1 ? "descendant" : "descendants");
+    } else {
+        title = "Stop the whole process?";
+        snprintf(lines[0], sizeof(lines[0]), "Linux cannot stop a single thread.");
+        snprintf(lines[1], sizeof(lines[1]), "%s (%d) stops with all its threads.",
+                 t->confirm_name, (int)t->confirm_key.pid);
+    }
+
+    int width = 34;
+    for (int i = 0; i < 2; i++) {
+        int needed = (int)strlen(lines[i]) + 6;
+        width = needed > width ? needed : width;
     }
     if (width > COLS - 2) {
         width = COLS - 2;
     }
-    int height = 5;
+    int height = lines[1][0] != '\0' ? 6 : 5;
     int top = HEADER_ROWS + ((int)body_height() - height) / 2;
     int left = (COLS - width) / 2;
     if (top < HEADER_ROWS) {
@@ -335,16 +417,19 @@ static void draw_confirm(const tui *t)
         mvhline(top + r, left, ' ', width);
     }
 
+    int row = top + 1;
     int col = left + 3;
-    move(top + 1, col);
+    move(row++, col);
     theme_use(ROLE_BAR, A_BOLD);
-    put_clipped(&col, "Stop process tree?");
-    col = left + 3;
-    move(top + 2, col);
+    put_clipped(&col, title);
     theme_use(ROLE_BAR, A_NORMAL);
-    put_clipped(&col, line);
+    for (int i = 0; i < 2 && lines[i][0] != '\0'; i++) {
+        col = left + 3;
+        move(row++, col);
+        put_clipped(&col, lines[i]);
+    }
     col = left + 3;
-    move(top + 3, col);
+    move(row, col);
     theme_use(ROLE_ACCENT, A_NORMAL);
     put_clipped(&col, "Enter stop   Esc cancel");
 }
@@ -358,7 +443,7 @@ static void draw(tui *t)
     } else {
         draw_header(t);
         draw_body(t);
-        if (t->confirming) {
+        if (t->confirm != CONFIRM_NONE) {
             draw_confirm(t);
         }
         draw_footer(t);
@@ -433,8 +518,19 @@ static void ask_stop_tree(tui *t)
 
     const vly_process *proc = &t->cur->procs[index];
     t->confirm_key = (proc_key){.pid = proc->pid, .start_time = proc->start_time};
+    fmt_safe_name(proc->name, t->confirm_name, sizeof(t->confirm_name));
     t->confirm_descendants = descendants;
-    t->confirming = true;
+    t->confirm = CONFIRM_TREE;
+}
+
+/* Del in the threads view: threads can't be stopped alone, so ask before
+ * stopping the whole process. */
+static void ask_stop_threads_owner(tui *t)
+{
+    t->confirm_key = t->threads.owner;
+    fmt_safe_name(t->threads.owner_name, t->confirm_name, sizeof(t->confirm_name));
+    t->confirm_descendants = 0;
+    t->confirm = CONFIRM_PROCESS;
 }
 
 /* The dialog takes every key: Enter confirms, anything else cancels. */
@@ -443,7 +539,8 @@ static void handle_confirm_key(tui *t, int key)
     if (key == KEY_RESIZE) {
         return;
     }
-    t->confirming = false;
+    confirm_kind kind = t->confirm;
+    t->confirm = CONFIRM_NONE;
     if (key != '\n' && key != '\r' && key != KEY_ENTER) {
         return;
     }
@@ -454,7 +551,10 @@ static void handle_confirm_key(tui *t, int key)
         set_message(t, false, "The process exited meanwhile");
         return;
     }
-    start_stop(t, index, true);
+    if (kind == CONFIRM_PROCESS) {
+        threads_view_close(&t->threads);
+    }
+    start_stop(t, index, kind == CONFIRM_TREE);
 }
 
 static void set_filter(tui *t, const char *text)
@@ -497,11 +597,95 @@ static bool handle_filter_key(tui *t, int key)
     return true;
 }
 
+static bool is_enter(int key)
+{
+    return key == '\n' || key == '\r' || key == KEY_ENTER;
+}
+
+/* Enter on a process: show its threads. */
+static void open_threads(tui *t)
+{
+    int32_t index = selected_index(t);
+    if (index == VLY_NO_INDEX) {
+        return;
+    }
+
+    const vly_process *proc = &t->cur->procs[index];
+    int err = threads_view_open(&t->threads, proc, "/proc");
+    if (err != 0) {
+        char name[VLY_NAME_SIZE];
+        fmt_safe_name(proc->name, name, sizeof(name));
+        set_message(t, true, "Cannot list the threads of %s: %s", name,
+                    err == -ESRCH ? "it exited" : strerror(-err));
+    }
+}
+
+/* Keys in the threads view. Returns false when the key ends the program. */
+static bool handle_threads_key(tui *t, int key)
+{
+    long page = (long)body_height() - 1;
+    if (page < 1) {
+        page = 1;
+    }
+
+    switch (key) {
+    case KEY_F(10):
+        return false;
+    case KEY_ESCAPE:
+    case KEY_LEFT:
+    case '\n':
+    case '\r':
+    case KEY_ENTER:
+        threads_view_close(&t->threads);
+        break;
+    case KEY_UP:
+        threads_view_move(&t->threads, -1);
+        break;
+    case KEY_DOWN:
+        threads_view_move(&t->threads, 1);
+        break;
+    case KEY_PPAGE:
+        threads_view_move(&t->threads, -page);
+        break;
+    case KEY_NPAGE:
+        threads_view_move(&t->threads, page);
+        break;
+    case KEY_HOME:
+        threads_view_move(&t->threads, -(long)t->threads.cur->count);
+        break;
+    case KEY_END:
+        threads_view_move(&t->threads, (long)t->threads.cur->count);
+        break;
+    case KEY_DC:
+    case KEY_SDC:
+        ask_stop_threads_owner(t);
+        break;
+    case KEY_RESIZE:
+        break;
+    default:
+        return true;
+    }
+
+    draw(t);
+    return true;
+}
+
 /* Returns false when the key should end the program. */
 static bool handle_key(tui *t, int key)
 {
-    if (t->confirming) {
+    if (t->confirm != CONFIRM_NONE) {
         handle_confirm_key(t, key);
+        draw(t);
+        return true;
+    }
+
+    if (t->threads.open) {
+        return handle_threads_key(t, key);
+    }
+
+    if (is_enter(key) && !t->editing_filter) {
+        quickfind_reset(&t->find);
+        open_threads(t);
         draw(t);
         return true;
     }
@@ -608,6 +792,7 @@ int tui_run(const tui_options *opts)
     tree_view_init(&t.view);
     quickfind_reset(&t.find);
     kill_jobs_init(&t.jobs);
+    threads_view_init(&t.threads);
     t.cur = &t.snapshots[0];
     t.prev = &t.snapshots[1];
     t.ticks_per_second = sysconf(_SC_CLK_TCK);
@@ -652,6 +837,7 @@ int tui_run(const tui_options *opts)
 
     endwin();
     kill_jobs_finish_all(&t.jobs);
+    threads_view_free(&t.threads);
     tree_view_free(&t.view);
     vly_snapshot_free(&t.snapshots[0]);
     vly_snapshot_free(&t.snapshots[1]);
