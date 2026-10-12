@@ -33,6 +33,17 @@ void vly_snapshot_free(vly_snapshot *snap);
  */
 int vly_snapshot_collect(vly_snapshot *snap, const char *proc_root);
 
+/*
+ * Replaces the contents of `snap` with the threads of process `pid`, read
+ * from `proc_root`/PID/task. Each entry describes one thread: `pid` holds
+ * its thread id, `name` its thread name, and CPU times are per thread, so
+ * vly_snapshot_compute_cpu() works across two thread snapshots. Tree links
+ * are meaningless here. Meant to be called on demand for one process, not
+ * every refresh. Returns 0 or a negative errno value (-ENOENT if the
+ * process is gone).
+ */
+int vly_snapshot_collect_threads(vly_snapshot *snap, const char *proc_root, pid_t pid);
+
 /* Returns the index of `pid` in `snap`, or VLY_NO_INDEX. O(log n). */
 int32_t vly_snapshot_index_of(const vly_snapshot *snap, pid_t pid);
 

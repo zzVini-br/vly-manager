@@ -1,3 +1,5 @@
+find_package(Threads REQUIRED)
+
 function(vly_add_test name)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE vly::core)
@@ -12,6 +14,8 @@ vly_add_test(test_cpu)
 vly_add_test(test_kill)
 vly_add_test(test_snapshot)
 vly_add_test(test_stat_parser)
+vly_add_test(test_threads)
+target_link_libraries(test_threads PRIVATE Threads::Threads)
 vly_add_test(test_tree)
 vly_add_test(test_version)
 
