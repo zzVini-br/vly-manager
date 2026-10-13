@@ -1,9 +1,16 @@
 # Curses-free view logic, shared by the terminal UI and its tests.
+find_package(Threads REQUIRED)
+
 add_library(vly_view STATIC
-    tui/tree_view.c
-    tui/quickfind.c)
-target_include_directories(vly_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tui)
-target_link_libraries(vly_view PUBLIC vly::core)
+    match.c
+    tui/kill_jobs.c
+    tui/quickfind.c
+    tui/threads_view.c
+    tui/tree_view.c)
+target_include_directories(vly_view PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tui)
+target_link_libraries(vly_view PUBLIC vly::core Threads::Threads)
 vly_set_warnings(vly_view)
 
 add_executable(vly
@@ -11,7 +18,6 @@ add_executable(vly
     cmd_list.c
     format.c
     main.c
-    match.c
     tui/theme.c
     tui/tui.c)
 

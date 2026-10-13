@@ -1,10 +1,12 @@
 #include "tree_view.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
+#include "match.h"
 /* Tree drawing pieces, each 3 columns wide once a marker follows. */
 #define LINE_CONTINUES "\xe2\x94\x82  " /* "│  " */
 #define LINE_BLANK "   "
@@ -22,10 +24,17 @@ void tree_view_init(tree_view *view)
     memset(view, 0, sizeof(*view));
 }
 
+struct tree_view_sort_item {
+    double key;
+    pid_t pid;
+    int32_t index;
+};
+
 void tree_view_free(tree_view *view)
 {
     free(view->rows);
     free(view->collapsed);
+    free(view->sort_items);
     tree_view_init(view);
 }
 
@@ -116,6 +125,73 @@ static void add_subtree(tree_view *view, int32_t index, int depth)
     }
 }
 
+/* Filter mode: each matching process is shown at the top level with its
+ * subtree; the search does not descend into a subtree already shown. */
+static void add_matches(tree_view *view, int32_t first, size_t depth_left)
+{
+    if (depth_left == 0) {
+        return;
+    }
+
+    for (int32_t i = next_visible(view, first);
+         i != VLY_NO_INDEX && view->row_count < view->row_capacity;
+         i = next_visible(view, proc_at(view, i)->next_sibling)) {
+        if (match_name_contains(proc_at(view, i)->name, view->filter)) {
+            add_subtree(view, i, 0);
+        } else {
+            add_matches(view, proc_at(view, i)->first_child, depth_left - 1);
+        }
+    }
+}
+
+/* Largest key first; equal keys in pid order, so rows don't jitter. */
+static int compare_sort_items(const void *a, const void *b)
+{
+    const struct tree_view_sort_item *x = a;
+    const struct tree_view_sort_item *y = b;
+
+    if (x->key != y->key) {
+        return x->key > y->key ? -1 : 1;
+    }
+    return (x->pid > y->pid) - (x->pid < y->pid);
+}
+
+/* Flat modes: every visible (and matching) process, sorted. */
+static int add_sorted(tree_view *view)
+{
+    const vly_snapshot *snap = view->snap;
+
+    if (view->sort_capacity < snap->count) {
+        struct tree_view_sort_item *items =
+            realloc(view->sort_items, snap->count * sizeof(*items));
+        if (items == NULL) {
+            return -ENOMEM;
+        }
+        view->sort_items = items;
+        view->sort_capacity = snap->count;
+    }
+
+    size_t n = 0;
+    for (size_t i = 0; i < snap->count; i++) {
+        int32_t index = (int32_t)i;
+        const vly_process *proc = proc_at(view, index);
+        if (!is_visible(view, index) ||
+            (view->filter[0] != '\0' && !match_name_contains(proc->name, view->filter))) {
+            continue;
+        }
+
+        double key = view->mode == TREE_VIEW_BY_CPU ? proc->cpu_percent : (double)proc->rss_pages;
+        view->sort_items[n++] =
+            (struct tree_view_sort_item){.key = key, .pid = proc->pid, .index = index};
+    }
+
+    qsort(view->sort_items, n, sizeof(*view->sort_items), compare_sort_items);
+    for (size_t i = 0; i < n; i++) {
+        view->rows[view->row_count++] = (tree_row){.index = view->sort_items[i].index, .depth = 0};
+    }
+    return 0;
+}
+
 /* Forgets collapsed processes that no longer exist. */
 static void prune_collapsed(tree_view *view)
 {
@@ -152,10 +228,19 @@ int tree_view_rebuild(tree_view *view, const vly_snapshot *snap)
 
     prune_collapsed(view);
 
-    for (int32_t root = next_visible(view, snap->first_root);
-         root != VLY_NO_INDEX && view->row_count < view->row_capacity;
-         root = next_visible(view, proc_at(view, root)->next_sibling)) {
-        add_subtree(view, root, 0);
+    if (view->mode != TREE_VIEW_TREE) {
+        int err = add_sorted(view);
+        if (err != 0) {
+            return err;
+        }
+    } else if (view->filter[0] != '\0') {
+        add_matches(view, snap->first_root, snap->count);
+    } else {
+        for (int32_t root = next_visible(view, snap->first_root);
+             root != VLY_NO_INDEX && view->row_count < view->row_capacity;
+             root = next_visible(view, proc_at(view, root)->next_sibling)) {
+            add_subtree(view, root, 0);
+        }
     }
 
     if (view->row_count == 0) {
@@ -173,6 +258,33 @@ int tree_view_rebuild(tree_view *view, const vly_snapshot *snap)
     }
     select_row(view, view->cursor < view->row_count ? view->cursor : view->row_count - 1);
     return 0;
+}
+
+int tree_view_set_filter(tree_view *view, const char *text)
+{
+    snprintf(view->filter, sizeof(view->filter), "%s", text);
+    if (view->snap == NULL) {
+        return 0; /* applied by the first rebuild */
+    }
+
+    int err = tree_view_rebuild(view, view->snap);
+    if (err != 0 || view->row_count == 0) {
+        return err;
+    }
+
+    /* Rebuild keeps the cursor's position when the selection disappears;
+     * for a new filter the first match is the better place. */
+    if (!key_matches(view->selection, proc_at(view, view->rows[view->cursor].index))) {
+        select_row(view, 0);
+    }
+    view->scroll = 0;
+    return 0;
+}
+
+int tree_view_set_mode(tree_view *view, tree_view_mode mode)
+{
+    view->mode = mode;
+    return view->snap == NULL ? 0 : tree_view_rebuild(view, view->snap);
 }
 
 const vly_process *tree_view_selected(const tree_view *view)
@@ -239,7 +351,7 @@ static int set_collapsed(tree_view *view, int32_t index, bool collapsed)
 
 int tree_view_left(tree_view *view)
 {
-    if (view->row_count == 0) {
+    if (view->row_count == 0 || view->mode != TREE_VIEW_TREE) {
         return 0;
     }
 
@@ -261,7 +373,7 @@ int tree_view_left(tree_view *view)
 
 int tree_view_right(tree_view *view)
 {
-    if (view->row_count == 0) {
+    if (view->row_count == 0 || view->mode != TREE_VIEW_TREE) {
         return 0;
     }
 
@@ -337,6 +449,9 @@ void tree_view_prefix(const tree_view *view, const tree_row *row, char *buf, siz
         return;
     }
     buf[0] = '\0';
+    if (view->mode != TREE_VIEW_TREE) {
+        return;
+    }
 
     if (row->depth == 0) {
         /* Top-level processes get only the expand marker, if any. */

@@ -250,8 +250,126 @@ static void test_select_by_prefix(void)
     vly_snapshot_free(&snap);
 }
 
+static void test_filter(void)
+{
+    vly_snapshot snap;
+    load_fixtures(&snap);
+    tree_view view;
+    tree_view_init(&view);
+
+    /* Set before the first rebuild: applied once there is a snapshot. */
+    CHECK(tree_view_set_filter(&view, "STEAM") == 0);
+    CHECK(tree_view_rebuild(&view, &snap) == 0);
+
+    /* steam comes up to the top level with its whole subtree. */
+    CHECK(view.row_count == 3);
+    if (view.row_count == 3) {
+        CHECK(row_pid(&view, 0) == 100 && view.rows[0].depth == 0);
+        CHECK(row_pid(&view, 1) == 101 && view.rows[1].depth == 1);
+        CHECK(row_pid(&view, 2) == 1000 && view.rows[2].depth == 1);
+        CHECK(prefix_is(&view, 0, "▾ "));
+        CHECK(prefix_is(&view, 1, "├─ "));
+        CHECK(prefix_is(&view, 2, "└─ "));
+    }
+    CHECK(selected_pid(&view) == 100);
+
+    /* A match inside an already shown subtree is not listed twice. */
+    CHECK(tree_view_set_filter(&view, "s") == 0);
+    CHECK(view.row_count == 4);
+
+    /* The selection stays while still visible... */
+    tree_view_move_to_end(&view);
+    CHECK(selected_pid(&view) == 1000);
+    CHECK(tree_view_set_filter(&view, "steam") == 0);
+    CHECK(selected_pid(&view) == 1000);
+    /* ...and moves to the first match otherwise. */
+    CHECK(tree_view_set_filter(&view, "web") == 0);
+    CHECK(view.row_count == 1);
+    CHECK(selected_pid(&view) == 101);
+
+    /* No match: no rows and no selection. */
+    CHECK(tree_view_set_filter(&view, "zzz") == 0);
+    CHECK(view.row_count == 0);
+    CHECK(tree_view_selected(&view) == NULL);
+
+    /* Kernel threads stay hidden while filtering. */
+    CHECK(tree_view_set_filter(&view, "kthread") == 0);
+    CHECK(view.row_count == 0);
+
+    /* Clearing the filter brings the full tree back. */
+    CHECK(tree_view_set_filter(&view, "") == 0);
+    CHECK(view.row_count == 4);
+    CHECK(row_pid(&view, 0) == 1);
+
+    /* Filtering survives refreshes. */
+    CHECK(tree_view_set_filter(&view, "reaper") == 0);
+    CHECK(tree_view_rebuild(&view, &snap) == 0);
+    CHECK(view.row_count == 1 && selected_pid(&view) == 1000);
+
+    tree_view_free(&view);
+    vly_snapshot_free(&snap);
+}
+
+static void test_sorted_modes(void)
+{
+    vly_snapshot snap;
+    load_fixtures(&snap);
+
+    /* CPU usage comes from two snapshots; set it directly here. Resident
+     * pages in the fixtures: systemd 3000, steam 52000, reaper 128, 101 0. */
+    snap.procs[vly_snapshot_index_of(&snap, 1)].cpu_percent = 10.0;
+    snap.procs[vly_snapshot_index_of(&snap, 100)].cpu_percent = 30.0;
+    snap.procs[vly_snapshot_index_of(&snap, 1000)].cpu_percent = 50.0;
+
+    tree_view view;
+    tree_view_init(&view);
+    CHECK(tree_view_rebuild(&view, &snap) == 0);
+    tree_view_move_to_end(&view); /* reaper */
+
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_BY_CPU) == 0);
+    CHECK(view.row_count == 4);
+    if (view.row_count == 4) {
+        CHECK(row_pid(&view, 0) == 1000);
+        CHECK(row_pid(&view, 1) == 100);
+        CHECK(row_pid(&view, 2) == 1);
+        CHECK(row_pid(&view, 3) == 101);
+        CHECK(view.rows[1].depth == 0);
+        CHECK(prefix_is(&view, 1, ""));
+    }
+    CHECK(selected_pid(&view) == 1000); /* the selection follows the process */
+
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_BY_MEMORY) == 0);
+    if (view.row_count == 4) {
+        CHECK(row_pid(&view, 0) == 100);
+        CHECK(row_pid(&view, 1) == 1);
+        CHECK(row_pid(&view, 2) == 1000);
+        CHECK(row_pid(&view, 3) == 101);
+    }
+
+    /* Nothing to fold in a flat list. */
+    tree_view_move_to_start(&view);
+    CHECK(tree_view_left(&view) == 0);
+    CHECK(tree_view_right(&view) == 0);
+    CHECK(view.row_count == 4 && view.collapsed_count == 0);
+
+    /* The filter keeps matching processes only, without their subtrees. */
+    CHECK(tree_view_set_filter(&view, "s") == 0);
+    CHECK(view.row_count == 2);
+    CHECK(row_pid(&view, 0) == 100 && row_pid(&view, 1) == 1);
+    CHECK(tree_view_set_filter(&view, "") == 0);
+
+    /* Back to the tree. */
+    CHECK(tree_view_set_mode(&view, TREE_VIEW_TREE) == 0);
+    CHECK(row_pid(&view, 0) == 1 && view.rows[1].depth == 1);
+
+    tree_view_free(&view);
+    vly_snapshot_free(&snap);
+}
+
 int main(void)
 {
+    test_sorted_modes();
+    test_filter();
     test_select_by_prefix();
     test_rows_and_prefixes();
     test_navigation();
