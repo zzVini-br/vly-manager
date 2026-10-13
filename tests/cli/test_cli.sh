@@ -3,6 +3,14 @@
 set -u
 
 VLY=$1
+
+# Without this, a missing binary makes the checks below wait on test
+# processes that nothing stops, until the test times out.
+if [ ! -x "$VLY" ]; then
+    echo "FAIL: $VLY is missing; build the project first (cmake --build build)" >&2
+    exit 1
+fi
+
 WORK=$(mktemp -d)
 failures=0
 
