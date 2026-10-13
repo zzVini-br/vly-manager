@@ -89,7 +89,7 @@ vly-manager is growing from a command-line tool into a full process and system m
 
 ## Building
 
-Requirements: a C11 compiler, CMake ≥ 3.25, ncurses (`libncurses-dev`), pkg-config and
+Requirements: a C11 compiler, CMake ≥ 3.20, ncurses (`libncurses-dev`), pkg-config and
 Linux ≥ 5.3 (for pidfds).
 
 ```sh
