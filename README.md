@@ -13,8 +13,8 @@ Built to solve a real annoyance: games launched through Steam/Proton leaving Ste
 convinced a game is still running, so it ignores `SIGTERM` and logout or shutdown hangs
 until systemd's stop timeout expires.
 
-> **Status:** early development. v0.1 shipped the command line; the interactive view
-> is in progress. See the [changelog](CHANGELOG.md) for what changed in each release.
+> **Status:** early development. v0.1 shipped the command line and v0.2 the interactive
+> view. See the [changelog](CHANGELOG.md) for what changed in each release.
 
 ## Interactive view
 
@@ -79,7 +79,7 @@ Exit status, for scripts:
 vly-manager is growing from a command-line tool into a full process and system monitor.
 
 - [x] **Command line** (v0.1): list, filter and stop processes or whole trees, safely
-- [ ] **Interactive view** (v0.2, in progress): a live process tree you can search,
+- [x] **Interactive view** (v0.2): a live process tree you can search,
       filter, sort and act on from the keyboard
 - [ ] **System activity**: network and disk usage, per process and for the whole system
 - [ ] **Apps and processes**: desktop applications told apart from background processes,
@@ -89,7 +89,7 @@ vly-manager is growing from a command-line tool into a full process and system m
 
 ## Building
 
-Requirements: a C11 compiler, CMake ≥ 3.25, ncurses (`libncurses-dev`), pkg-config and
+Requirements: a C11 compiler, CMake ≥ 3.20, ncurses (`libncurses-dev`), pkg-config and
 Linux ≥ 5.3 (for pidfds).
 
 ```sh

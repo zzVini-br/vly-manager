@@ -1,3 +1,6 @@
+/* syscall(), for the pidfd fallback below. */
+#define _DEFAULT_SOURCE
+
 #include "vly/kill.h"
 
 #include <errno.h>
@@ -7,11 +10,32 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/pidfd.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "proc_reader.h"
+
+#ifdef VLY_HAVE_SYS_PIDFD_H
+#include <sys/pidfd.h>
+#else
+/* glibc before 2.36 has no wrappers, but the system calls exist since Linux
+ * 5.1 (pidfd_send_signal) and 5.3 (pidfd_open). */
+#include <sys/syscall.h>
+
+#if !defined(SYS_pidfd_open) || !defined(SYS_pidfd_send_signal)
+#error "vly needs Linux 5.3 kernel headers (pidfd_open and pidfd_send_signal)"
+#endif
+
+static int pidfd_open(pid_t pid, unsigned int flags)
+{
+    return (int)syscall(SYS_pidfd_open, pid, flags);
+}
+
+static int pidfd_send_signal(int pidfd, int sig, siginfo_t *info, unsigned int flags)
+{
+    return (int)syscall(SYS_pidfd_send_signal, pidfd, sig, info, flags);
+}
+#endif
 
 typedef struct target {
     int pidfd; /* -1 once the process has exited or been dropped */

@@ -324,7 +324,7 @@ void tree_view_move_to_end(tree_view *view)
 static int set_collapsed(tree_view *view, int32_t index, bool collapsed)
 {
     const vly_process *proc = proc_at(view, index);
-    size_t position;
+    size_t position = 0; /* set by find_collapsed() when it returns true */
     bool is_collapsed = find_collapsed(view, proc, &position);
 
     if (collapsed == is_collapsed) {

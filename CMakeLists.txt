@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.20)
 
 project(vly-manager
-    VERSION 0.1.1
+    VERSION 0.2.0
     DESCRIPTION "Fast, practical process manager for Linux"
     HOMEPAGE_URL "https://github.com/zzVini-br/vly-manager"
     LANGUAGES C)

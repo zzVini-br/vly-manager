@@ -16,4 +16,12 @@ target_include_directories(vly_core PUBLIC
 target_compile_definitions(vly_core PRIVATE
     VLY_VERSION_STRING="${PROJECT_VERSION}")
 
+# glibc only wraps the pidfd system calls from 2.36 on; older ones get a
+# fallback in kill.c.
+include(CheckIncludeFile)
+check_include_file(sys/pidfd.h VLY_HAVE_SYS_PIDFD_H)
+if(VLY_HAVE_SYS_PIDFD_H)
+    target_compile_definitions(vly_core PRIVATE VLY_HAVE_SYS_PIDFD_H)
+endif()
+
 vly_set_warnings(vly_core)
