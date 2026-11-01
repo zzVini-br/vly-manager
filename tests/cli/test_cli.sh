@@ -132,7 +132,11 @@ expect_status 0 "kill a process with control characters" "$VLY" kill "$evil_pid"
 wait "$evil_pid"
 
 # Refusals and misses.
-expect_status 1 "kill pid 1" "$VLY" kill 1
+# As a regular user the kernel would refuse anyway, so a regression in vly's
+# own refusal can't hurt; as root, don't aim at init at all.
+if [ "$(id -u)" -ne 0 ]; then
+    expect_status 1 "kill pid 1" "$VLY" kill 1
+fi
 expect_status 1 "kill missing name" "$VLY" kill vly-no-such-process
 expect_status 1 "kill without target" "$VLY" kill
 expect_status 1 "kill with bad timeout" "$VLY" kill -t abc 123

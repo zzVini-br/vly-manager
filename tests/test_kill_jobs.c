@@ -130,13 +130,21 @@ static void test_refuses_protected_processes(void)
     vly_snapshot snap;
     vly_snapshot_init(&snap);
 
-    int32_t init = take_snapshot(&snap, 1);
-    CHECK(kill_jobs_start(&jobs, &snap, init, true, &fast) == -EINVAL);
+    /* Never aim a job at a process this test did not start: a child of ours
+     * that the snapshot claims is a kernel thread stands in for the protected
+     * processes, so a regression could only hit that child. */
+    pid_t child = spawn(false, false);
+    int32_t index = take_snapshot(&snap, child);
+    snap.procs[index].is_kernel_thread = true;
+    CHECK(kill_jobs_start(&jobs, &snap, index, true, &fast) == -EINVAL);
     CHECK(kill_jobs_start(&jobs, &snap, vly_snapshot_index_of(&snap, getpid()), false, &fast) ==
           -EINVAL);
     CHECK(kill_jobs_start(&jobs, &snap, VLY_NO_INDEX, false, &fast) == -EINVAL);
     CHECK(!kill_jobs_busy(&jobs));
+    CHECK(kill(child, 0) == 0); /* nothing was sent */
 
+    kill(child, SIGKILL);
+    waitpid(child, NULL, 0);
     vly_snapshot_free(&snap);
 }
 

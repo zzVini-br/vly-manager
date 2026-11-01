@@ -299,21 +299,46 @@ static void test_reused_pid_is_not_signalled(void)
     vly_snapshot_free(&snap);
 }
 
+/*
+ * Checks the refusals without ever aiming a real kill at a process this test
+ * did not start. Pid 1 and real kernel threads are checked with signal 0,
+ * which delivers nothing even if a refusal regressed. The kill paths use a
+ * child of ours that the snapshot claims is a kernel thread, so a regression
+ * could only hit that child. (Pid 2 is not always kthreadd: on WSL it is an
+ * ordinary process, the ancestor of the user's shell.)
+ */
 static void test_protected_targets(void)
 {
     vly_snapshot snap;
     vly_snapshot_init(&snap);
-    int32_t init = take_snapshot(&snap, 1);
-    int32_t kthreadd = vly_snapshot_index_of(&snap, 2);
+    pid_t child = spawn(false);
+    int32_t index = take_snapshot(&snap, child);
+    int32_t init = vly_snapshot_index_of(&snap, 1);
     int32_t self = vly_snapshot_index_of(&snap, getpid());
 
+    if (init != VLY_NO_INDEX) {
+        CHECK(vly_signal_process(&snap.procs[init], 0) == -EINVAL);
+    }
+    CHECK(vly_signal_process(&snap.procs[self], 0) == -EINVAL);
+    for (size_t i = 0; i < snap.count; i++) {
+        if (snap.procs[i].is_kernel_thread) { /* none on WSL or in containers */
+            CHECK(vly_signal_process(&snap.procs[i], 0) == -EINVAL);
+            break;
+        }
+    }
+
     vly_kill_report report;
-    CHECK(vly_kill(&snap, init, &fast, &report) == -EINVAL);
-    CHECK(vly_kill_tree(&snap, kthreadd, &fast, &report) == -EINVAL);
     CHECK(vly_kill(&snap, self, &fast, &report) == -EINVAL);
     CHECK(vly_kill(&snap, VLY_NO_INDEX, &fast, &report) == -EINVAL);
     CHECK(vly_kill(&snap, (int32_t)snap.count, &fast, &report) == -EINVAL);
-    CHECK(vly_signal_process(&snap.procs[init], 0) == -EINVAL);
+
+    snap.procs[index].is_kernel_thread = true;
+    CHECK(vly_kill(&snap, index, &fast, &report) == -EINVAL);
+    CHECK(vly_kill_tree(&snap, index, &fast, &report) == -EINVAL);
+    CHECK(kill(child, 0) == 0); /* nothing was sent */
+
+    kill(child, SIGKILL);
+    waitpid(child, NULL, 0);
     vly_snapshot_free(&snap);
 }
 
