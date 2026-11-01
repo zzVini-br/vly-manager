@@ -44,8 +44,8 @@ system.
   `quickfind`) that are unit-tested; the curses code only draws.
 - Safety rules that every change keeps:
   - signals go through the `vly_kill*` / `vly_signal_process` functions, which verify a
-    process's identity with a pidfd before signalling it; never call `kill()` on a pid
-    directly;
+    process's identity with a pidfd before signalling it; vly's own code never calls
+    `kill()` on a pid directly;
   - process names are untrusted: print them through `fmt_safe_name()`;
   - walks over the process tree are bounded, since pid reuse can create cycles in a
     snapshot.
@@ -55,6 +55,11 @@ system.
 - New behavior comes with tests; a bug fix comes with a test that fails without it.
 - Use the fake `/proc` in `tests/fixtures/proc/` for deterministic cases, and real
   child processes when the kernel's behavior is what matters.
+- Tests only ever stop processes they started themselves. To check that a target is
+  refused, use signal 0 (it delivers nothing) or a copy of the snapshot that makes one
+  of your own children look protected. Never aim a kill at pid 1, pid 2 or anything
+  else you did not create: pid 2 is not always a kernel thread (on WSL it is an
+  ordinary process above the user's shell), and tests may run as root.
 
 ## Commits and pull requests
 
